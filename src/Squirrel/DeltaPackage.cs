@@ -15,6 +15,9 @@ using SharpCompress.Writers;
 using SharpCompress.Common;
 using SharpCompress.Readers;
 using SharpCompress.Compressors.Deflate;
+using System.Threading.Tasks;
+using System.Threading;
+using Ionic.Zip;
 
 namespace Squirrel
 {
@@ -164,20 +167,29 @@ namespace Squirrel
                     });
 
                 this.Log().Info("Repacking into full package: {0}", outputFile);
-                using (var za = ZipArchive.Create())
+				using (var za = ZipArchive.Create())
                 using (var tgt = File.OpenWrite(outputFile)) {
                     za.DeflateCompressionLevel = CompressionLevel.BestSpeed;
                     za.AddAllFromDirectory(workingPath);
                     za.SaveTo(tgt);
                 }
 
-                progress(100);
+				/*using (var zip = new Ionic.Zip.ZipFile())
+				{
+					zip.UseZip64WhenSaving = Zip64Option.Always;
+					zip.AddDirectory(workingPath);
+					zip.Save(outputFile);
+				}*/
+
+				//Utility.CreateZipFromDirectory(outputFile, workingPath).Wait();
+
+				progress(100);
             }
 
             return new ReleasePackage(outputFile);
         }
 
-        void createDeltaForSingleFile(FileInfo targetFile, DirectoryInfo workingDirectory, Dictionary<string, string> baseFileListing)
+        async Task createDeltaForSingleFile(FileInfo targetFile, DirectoryInfo workingDirectory, Dictionary<string, string> baseFileListing)
         {
             // NB: There are three cases here that we'll handle:
             //
@@ -222,16 +234,24 @@ namespace Squirrel
             }
             
             try {
-                using (FileStream of = File.Create(targetFile.FullName + ".bsdiff")) {
-                    BinaryPatchUtility.Create(oldData, newData, of);
+				var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("bsdiff.exe"),
+										String.Format("{0} {1} {2}", baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".bsdiff"),
+										CancellationToken.None);
+				task.Wait();
 
-                    // NB: Create a dummy corrupt .diff file so that older 
-                    // versions which don't understand bsdiff will fail out
-                    // until they get upgraded, instead of seeing the missing
-                    // file and just removing it.
-                    File.WriteAllText(targetFile.FullName + ".diff", "1");
-                }
-            } catch (Exception ex) {
+				if (task.Result.Item1 != 0) {
+					this.Log().Warn(String.Format("We really couldn't create a delta for {0}", targetFile.Name));
+					Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
+					Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
+					return;
+				}
+
+				// NB: Create a dummy corrupt .diff file so that older 
+				// versions which don't understand bsdiff will fail out
+				// until they get upgraded, instead of seeing the missing
+				// file and just removing it.
+				File.WriteAllText(targetFile.FullName + ".diff", "1");
+			} catch (Exception ex) {
                 this.Log().WarnException(String.Format("We really couldn't create a delta for {0}", targetFile.Name), ex);
 
                 Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
@@ -263,13 +283,18 @@ namespace Squirrel
                 }
 
                  if (relativeFilePath.EndsWith(".bsdiff", StringComparison.InvariantCultureIgnoreCase)) {
-                    using (var of = File.OpenWrite(tempTargetFile))
-                    using (var inf = File.OpenRead(finalTarget)) {
-                        this.Log().Info("Applying BSDiff to {0}", relativeFilePath);
-                        BinaryPatchUtility.Apply(inf, () => File.OpenRead(inputFile), of);
-                    }
+					this.Log().Info("Applying BSDiff to {0}", relativeFilePath);
+					var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("bspatch.exe"),
+										String.Format("{0} {1} {2}", finalTarget, tempTargetFile, inputFile),
+										CancellationToken.None);
+					task.Wait();
 
-                    verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
+					if (task.Result.Item1 != 0) {
+						this.Log().Warn(String.Format("Cannot apply patch to {0}", finalTarget));
+						throw new Exception(String.Format("Cannot apply patch to {0}", finalTarget));
+					}
+
+					verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
                  } else if (relativeFilePath.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase)) {
                     this.Log().Info("Applying MSDiff to {0}", relativeFilePath);
                     var msDelta = new MsDeltaCompression();

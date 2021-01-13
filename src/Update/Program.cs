@@ -393,38 +393,40 @@ namespace Squirrel.Update
 
             ReleaseEntry.WriteReleaseFile(releaseEntries, releaseFilePath);
 
-            var targetSetupExe = Path.Combine(di.FullName, "Setup.exe");
-            var newestFullRelease = releaseEntries.MaxBy(x => x.Version).Where(x => !x.IsDelta).First();
+			// WriteZipToSetup utility cannot create setups bigger than 2GB.
 
-            File.Copy(bootstrapperExe, targetSetupExe, true);
-            var zipPath = createSetupEmbeddedZip(Path.Combine(di.FullName, newestFullRelease.Filename), di.FullName, backgroundGif, signingOpts, setupIcon).Result;
+            //var targetSetupExe = Path.Combine(di.FullName, "Setup.exe");
+            //var newestFullRelease = releaseEntries.MaxBy(x => x.Version).Where(x => !x.IsDelta).First();
 
-            var writeZipToSetup = Utility.FindHelperExecutable("WriteZipToSetup.exe");
+            //File.Copy(bootstrapperExe, targetSetupExe, true);
+            //var zipPath = createSetupEmbeddedZip(Path.Combine(di.FullName, newestFullRelease.Filename), di.FullName, backgroundGif, signingOpts, setupIcon).Result;
 
-            try {
-                var arguments = String.Format("\"{0}\" \"{1}\" \"--set-required-framework\" \"{2}\"", targetSetupExe, zipPath, frameworkVersion);
-                var result = Utility.InvokeProcessAsync(writeZipToSetup, arguments, CancellationToken.None).Result;
-                if (result.Item1 != 0) throw new Exception("Failed to write Zip to Setup.exe!\n\n" + result.Item2);
-            } catch (Exception ex) {
-                this.Log().ErrorException("Failed to update Setup.exe with new Zip file", ex);
-            } finally {
-                File.Delete(zipPath);
-            }
+            //var writeZipToSetup = Utility.FindHelperExecutable("WriteZipToSetup.exe");
 
-            Utility.Retry(() =>
-                setPEVersionInfoAndIcon(targetSetupExe, new ZipPackage(package), setupIcon).Wait());
+            //try {
+            //    var arguments = String.Format("\"{0}\" \"{1}\" \"--set-required-framework\" \"{2}\"", targetSetupExe, zipPath, frameworkVersion);
+            //    var result = Utility.InvokeProcessAsync(writeZipToSetup, arguments, CancellationToken.None).Result;
+            //    if (result.Item1 != 0) throw new Exception("Failed to write Zip to Setup.exe!\n\n" + result.Item2);
+            //} catch (Exception ex) {
+            //    this.Log().ErrorException("Failed to update Setup.exe with new Zip file", ex);
+            //} finally {
+            //    File.Delete(zipPath);
+            //}
 
-            if (signingOpts != null) {
-                signPEFile(targetSetupExe, signingOpts).Wait();
-            }
+            //Utility.Retry(() =>
+            //    setPEVersionInfoAndIcon(targetSetupExe, new ZipPackage(package), setupIcon).Wait());
 
-            if (generateMsi) {
-                createMsiPackage(targetSetupExe, new ZipPackage(package), packageAs64Bit).Wait();
+            //if (signingOpts != null) {
+            //    signPEFile(targetSetupExe, signingOpts).Wait();
+            //}
 
-                if (signingOpts != null) {
-                    signPEFile(targetSetupExe.Replace(".exe", ".msi"), signingOpts).Wait();
-                }
-            }
+            //if (generateMsi) {
+            //    createMsiPackage(targetSetupExe, new ZipPackage(package), packageAs64Bit).Wait();
+
+            //    if (signingOpts != null) {
+            //        signPEFile(targetSetupExe.Replace(".exe", ".msi"), signingOpts).Wait();
+            //    }
+            //}
         }
 
         public void Shortcut(string exeName, string shortcutArgs, string processStartArgs, string icon, bool onlyUpdate)

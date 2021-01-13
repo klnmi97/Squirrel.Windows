@@ -15,6 +15,7 @@ using Squirrel.SimpleSplat;
 using System.Threading.Tasks;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Readers;
+using Ionic.Zip;
 
 namespace Squirrel
 {
@@ -167,28 +168,13 @@ namespace Squirrel
 
         static Task extractZipWithEscaping(string zipFilePath, string outFolder)
         {
-            return Task.Run(() => {
-                using (var za = ZipArchive.Open(zipFilePath))
-                using (var reader = za.ExtractAllEntries()) {
-                    while (reader.MoveToNextEntry()) {
-                        var parts = reader.Entry.Key.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
-                        var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
-
-                        var fullTargetFile = Path.Combine(outFolder, decoded);
-                        var fullTargetDir = Path.GetDirectoryName(fullTargetFile);
-                        Directory.CreateDirectory(fullTargetDir);
-
-                        Utility.Retry(() => {
-                            if (reader.Entry.IsDirectory) {
-                                Directory.CreateDirectory(Path.Combine(outFolder, decoded));
-                            } else {
-                                reader.WriteEntryToFile(Path.Combine(outFolder, decoded));
-                            }
-                        }, 5);
-                    }
-                }
-            });
-        }
+			return Task.Run(() => {
+				using (ZipFile zip = ZipFile.Read(zipFilePath))	{
+					Directory.CreateDirectory(outFolder);
+					zip.ExtractAll(outFolder, ExtractExistingFileAction.OverwriteSilently);
+				}
+			});
+		}
 
         public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder)
         {
@@ -200,29 +186,26 @@ namespace Squirrel
             var re = new Regex(@"lib[\\\/][^\\\/]*[\\\/]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
             return Task.Run(() => {
-                using (var za = ZipArchive.Open(zipFilePath))
-                using (var reader = za.ExtractAllEntries()) {
-                    var totalItems = za.Entries.Count;
+				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
+					var totalItems = zip.Entries.Count;
                     var currentItem = 0;
 
-                    while (reader.MoveToNextEntry()) {
+					foreach (ZipEntry entry in zip.Entries) {
                         // Report progress early since we might be need to continue for non-matches
                         currentItem++;
                         var percentage = (currentItem * 100d) / totalItems;
                         progress((int)percentage);
 
-                        var parts = reader.Entry.Key.Split('\\', '/');
+                        var parts = entry.FileName.Split('\\', '/');
                         var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
 
                         if (!re.IsMatch(decoded)) continue;
                         decoded = re.Replace(decoded, "", 1);
 
                         var fullTargetFile = Path.Combine(outFolder, decoded);
-                        var fullTargetDir = Path.GetDirectoryName(fullTargetFile);
-                        Directory.CreateDirectory(fullTargetDir);
 
                         var failureIsOkay = false;
-                        if (!reader.Entry.IsDirectory && decoded.Contains("_ExecutionStub.exe")) {
+                        if (!entry.IsDirectory && decoded.Contains("_ExecutionStub.exe")) {
                             // NB: On upgrade, many of these stubs will be in-use, nbd tho.
                             failureIsOkay = true;
 
@@ -234,13 +217,10 @@ namespace Squirrel
                         }
 
                         try {
+							// PO: This is really weird. Why is it here? Let's leave it here as it could have some reason...
                             Utility.Retry(() => {
-                                if (reader.Entry.IsDirectory) {
-                                    Directory.CreateDirectory(fullTargetFile);
-                                } else {
-                                    reader.WriteEntryToFile(fullTargetFile);
-                                }
-                            }, 5);
+								entry.Extract(outFolder);
+							}, 5);
                         } catch (Exception e) {
                             if (!failureIsOkay) throw;
                             LogHost.Default.WarnException("Can't write execution stub, probably in use", e);

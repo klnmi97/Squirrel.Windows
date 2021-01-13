@@ -112,19 +112,17 @@ namespace Squirrel
             using (Utility.WithTempDirectory(out workingPath, localAppDirectory)) {
                 var opts = new ExtractionOptions() { ExtractFullPath = true, Overwrite = true, PreserveFileTime = true };
 
-                using (var za = ZipArchive.Open(deltaPackage.InputPackageFile))
-                using (var reader = za.ExtractAllEntries()) {
-                    reader.WriteAllToDirectory(deltaPath, opts);
-                }
+				using (ZipFile zip = ZipFile.Read(deltaPackage.InputPackageFile)) {
+					zip.ExtractAll(deltaPath, ExtractExistingFileAction.OverwriteSilently);
+				}
 
-                progress(25);
+				progress(25);
 
-                using (var za = ZipArchive.Open(basePackage.InputPackageFile))
-                using (var reader = za.ExtractAllEntries()) {
-                    reader.WriteAllToDirectory(workingPath, opts);
-                }
+				using (ZipFile zip = ZipFile.Read(basePackage.InputPackageFile)) {
+					zip.ExtractAll(workingPath, ExtractExistingFileAction.OverwriteSilently);
+				}
 
-                progress(50);
+				progress(50);
 
                 var pathsVisited = new List<string>();
 
@@ -167,20 +165,14 @@ namespace Squirrel
                     });
 
                 this.Log().Info("Repacking into full package: {0}", outputFile);
-				using (var za = ZipArchive.Create())
-                using (var tgt = File.OpenWrite(outputFile)) {
-                    za.DeflateCompressionLevel = CompressionLevel.BestSpeed;
-                    za.AddAllFromDirectory(workingPath);
-                    za.SaveTo(tgt);
-                }
-
-				/*using (var zip = new Ionic.Zip.ZipFile())
-				{
+				using (ZipFile zip = new ZipFile())	{
 					zip.UseZip64WhenSaving = Zip64Option.Always;
+					zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
 					zip.AddDirectory(workingPath);
 					zip.Save(outputFile);
-				}*/
+				}
 
+				// 7-zip speed testing
 				//Utility.CreateZipFromDirectory(outputFile, workingPath).Wait();
 
 				progress(100);

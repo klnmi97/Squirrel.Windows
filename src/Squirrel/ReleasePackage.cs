@@ -13,8 +13,6 @@ using MarkdownSharp;
 using NuGet;
 using Squirrel.SimpleSplat;
 using System.Threading.Tasks;
-using SharpCompress.Archives.Zip;
-using SharpCompress.Readers;
 using Ionic.Zip;
 
 namespace Squirrel

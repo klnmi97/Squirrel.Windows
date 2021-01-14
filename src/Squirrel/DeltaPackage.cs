@@ -8,13 +8,6 @@ using System.Text.RegularExpressions;
 using Squirrel.SimpleSplat;
 using DeltaCompressionDotNet.MsDelta;
 using System.ComponentModel;
-using Squirrel.Bsdiff;
-using SharpCompress.Archives;
-using SharpCompress.Archives.Zip;
-using SharpCompress.Writers;
-using SharpCompress.Common;
-using SharpCompress.Readers;
-using SharpCompress.Compressors.Deflate;
 using System.Threading.Tasks;
 using System.Threading;
 using Ionic.Zip;
@@ -110,8 +103,6 @@ namespace Squirrel
 
             using (Utility.WithTempDirectory(out deltaPath, localAppDirectory))
             using (Utility.WithTempDirectory(out workingPath, localAppDirectory)) {
-                var opts = new ExtractionOptions() { ExtractFullPath = true, Overwrite = true, PreserveFileTime = true };
-
 				using (ZipFile zip = ZipFile.Read(deltaPackage.InputPackageFile)) {
 					zip.ExtractAll(deltaPath, ExtractExistingFileAction.OverwriteSilently);
 				}

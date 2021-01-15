@@ -27,6 +27,7 @@ namespace Squirrel.Update
         internal bool packageAs64Bit { get; private set; } = false;
         internal bool noDelta { get; private set; } = false;
         internal bool onlyUpdateShortcuts { get; private set; } = false;
+		internal bool noSetups { get; private set; } = false;
                
         public StartupOption(string[] args) {
            optionSet = Parse(args);
@@ -68,6 +69,7 @@ namespace Squirrel.Update
                 { "framework-version=", "Set the required .NET framework version, e.g. net461", v => frameworkVersion = v },
                 { "msi-win64", "Mark the MSI as 64-bit, which is useful in Enterprise deployment scenarios", _ => packageAs64Bit = true},
                 { "updateOnly", "Update shortcuts that already exist, rather than creating new ones", _ => onlyUpdateShortcuts = true},
+                { "no-setups", "Don't generate setup files, useful for big nuget packages because WriteZipToSetup utility cannot handle files bigger than 2GB.", _ => noSetups = true}
             };
 
             opts.Parse(args);

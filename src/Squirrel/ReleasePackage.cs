@@ -167,9 +167,15 @@ namespace Squirrel
         static Task extractZipWithEscaping(string zipFilePath, string outFolder)
         {
 			return Task.Run(() => {
-				using (ZipFile zip = ZipFile.Read(zipFilePath))	{
-					Directory.CreateDirectory(outFolder);
-					zip.ExtractAll(outFolder, ExtractExistingFileAction.OverwriteSilently);
+				Directory.CreateDirectory(outFolder);
+
+				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
+					foreach (ZipEntry entry in zip.Entries.ToList()) {
+						var parts = entry.FileName.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
+						var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+						entry.FileName = decoded;
+						entry.Extract(outFolder);
+					}
 				}
 			});
 		}

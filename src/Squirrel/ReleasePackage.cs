@@ -181,24 +181,34 @@ namespace Squirrel
 
         public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder, Action<int> progress)
         {
-            var re = new Regex(@"lib[\\\/][^\\\/]*[\\\/]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+			// Regex for the matching of "lib/[framework]/" directory.
+			var re = new Regex(@"lib[\\\/][^\\\/]*[\\\/]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
             return Task.Run(() => {
 				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
 					var totalItems = zip.Entries.Count;
                     var currentItem = 0;
 
-					foreach (ZipEntry entry in zip.Entries) {
-                        // Report progress early since we might be need to continue for non-matches
-                        currentItem++;
-                        var percentage = (currentItem * 100d) / totalItems;
-                        progress((int)percentage);
+					foreach (ZipEntry entry in zip.Entries.ToList()) {
+						// Report progress early since we might be need to continue for non-matches
+						currentItem++;
+						var percentage = (currentItem * 100d) / totalItems;
+						progress((int)percentage);
 
-                        var parts = entry.FileName.Split('\\', '/');
-                        var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+						var parts = entry.FileName.Split('\\', '/');
+						var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
 
-                        if (!re.IsMatch(decoded)) continue;
-                        decoded = re.Replace(decoded, "", 1);
+						// Skip the extracting of entries which path does not contain "lib/[framework]/". 
+						if (!re.IsMatch(decoded)) continue;
+
+						// Cut "lib/[framework]/" from the entry FileName.
+						decoded = re.Replace(decoded, "", 1);
+
+						// Skip the extracting of "lib/[framework]/" directory.
+						if (decoded == "") continue;
+
+						// We do not want to create "lib/[framework]/" directory in the installation folder, so use the cut entry's path.
+						entry.FileName = decoded;
 
                         var fullTargetFile = Path.Combine(outFolder, decoded);
 

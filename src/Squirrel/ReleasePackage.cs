@@ -196,44 +196,50 @@ namespace Squirrel
                     var currentItem = 0;
 
 					foreach (ZipEntry entry in zip.Entries.ToList()) {
+						string folderToExtractEntry = outFolder;
+
 						// Report progress early since we might be need to continue for non-matches
 						currentItem++;
 						var percentage = (currentItem * 100d) / totalItems;
-						progress((int)percentage);
-
-						var parts = entry.FileName.Split('\\', '/');
-						var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+						progress((int)percentage);						
 
 						// Skip the extracting of entries which path does not contain "lib/[framework]/". 
-						if (!re.IsMatch(decoded)) continue;
+						if (!re.IsMatch(entry.FileName)) continue;
 
 						// Cut "lib/[framework]/" from the entry FileName.
-						decoded = re.Replace(decoded, "", 1);
+						var cutPath = re.Replace(entry.FileName, "", 1);
 
 						// Skip the extracting of "lib/[framework]/" directory.
-						if (decoded == "") continue;
-
-						// We do not want to create "lib/[framework]/" directory in the installation folder, so use the cut entry's path.
-						entry.FileName = decoded;
-
-                        var fullTargetFile = Path.Combine(outFolder, decoded);
+						if (cutPath == "") continue;						
 
                         var failureIsOkay = false;
-                        if (!entry.IsDirectory && decoded.Contains("_ExecutionStub.exe")) {
+						string exeStubPath = "";
+                        if (!entry.IsDirectory && cutPath.Contains("_ExecutionStub.exe")) {
                             // NB: On upgrade, many of these stubs will be in-use, nbd tho.
                             failureIsOkay = true;
+							folderToExtractEntry = rootPackageFolder;
+							entry.FileName = Path.GetFileName(cutPath);
 
-                            fullTargetFile = Path.Combine(
+							exeStubPath = Path.Combine(
                                 rootPackageFolder,
-                                Path.GetFileName(decoded).Replace("_ExecutionStub.exe", ".exe"));
+								entry.FileName);
 
-                            LogHost.Default.Info("Rigging execution stub for {0} to {1}", decoded, fullTargetFile);
+                            LogHost.Default.Info("Rigging execution stub for {0} to {1}", cutPath, exeStubPath);
                         }
+						else {
+							// We do not want to create "lib/[framework]/" directory in the installation folder, so use the cut entry's path.
+							entry.FileName = cutPath;
+						}
 
                         try {
 							// PO: This is really weird. Why is it here? Let's leave it here as it could have some reason...
                             Utility.Retry(() => {
-								entry.Extract(outFolder);
+								entry.Extract(folderToExtractEntry);
+
+								// Rename the stub exe file after extraction.
+								if (failureIsOkay) {
+									File.Move(exeStubPath, exeStubPath.Replace("_ExecutionStub.exe", ".exe"));
+								}
 							}, 5);
                         } catch (Exception e) {
                             if (!failureIsOkay) throw;

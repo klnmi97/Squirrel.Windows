@@ -23,7 +23,9 @@ namespace Squirrel
     public class DeltaPackageBuilder : IEnableLogger, IDeltaPackageBuilder
     {
         readonly string localAppDirectory;
-        public DeltaPackageBuilder(string localAppDataOverride = null)
+		const int BYTES_TO_READ = sizeof(Int64);
+
+		public DeltaPackageBuilder(string localAppDataOverride = null)
         {
             this.localAppDirectory = localAppDataOverride;
         }
@@ -190,10 +192,9 @@ namespace Squirrel
                 return;
             }
 
-            var oldData = File.ReadAllBytes(baseFileListing[relativePath]);
-            var newData = File.ReadAllBytes(targetFile.FullName);
+			FileInfo oldFile = new FileInfo(baseFileListing[relativePath]);
 
-            if (bytesAreIdentical(oldData, newData)) {
+            if (filesAreEqual(oldFile, targetFile)) {
                 this.Log().Info("{0} hasn't changed, writing dummy file", relativePath);
 
                 File.Create(targetFile.FullName + ".diff").Dispose();
@@ -242,13 +243,22 @@ namespace Squirrel
                 return;
             }
 
-        exit:
+			exit:
 
-            var rl = ReleaseEntry.GenerateFromFile(new MemoryStream(newData), targetFile.Name + ".shasum");
-            File.WriteAllText(targetFile.FullName + ".shasum", rl.EntryAsString, Encoding.UTF8);
-            targetFile.Delete();
+			try {
+				using (FileStream newFile = File.OpenRead(targetFile.FullName)) {
+					var rl = ReleaseEntry.GenerateFromFile(newFile, targetFile.Name + ".shasum");
+					File.WriteAllText(targetFile.FullName + ".shasum", rl.EntryAsString, Encoding.UTF8);					
+				}
+				targetFile.Delete();
+			}
+			catch (Exception ex) {
+				this.Log().WarnException(String.Format("We really couldn't create a delta for {0}. Error during shasum file creation.", targetFile.Name), ex);
+				Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
+				Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
+				Utility.DeleteFileHarder(targetFile.FullName + ".shasum", true);
+			}
         }
-
 
         void applyDiffToFile(string deltaPath, string relativeFilePath, string workingDirectory)
         {
@@ -322,7 +332,10 @@ namespace Squirrel
             }
         }
 
-        bool bytesAreIdentical(byte[] oldData, byte[] newData)
+		/// <summary>
+		/// Compares two byte arrays if they are identical. There is a limitation of the 2GB per byte array in c sharp.
+		/// </summary>
+		bool bytesAreIdentical(byte[] oldData, byte[] newData)
         {
             if (oldData == null || newData == null) {
                 return oldData == newData;
@@ -339,5 +352,40 @@ namespace Squirrel
 
             return true;
         }
-    }
+
+		/// <summary>
+		/// Compares two files if they are identical. Source: https://stackoverflow.com/a/1359947
+		/// </summary>
+		/// <param name="first">First file for the comparison.</param>
+		/// <param name="second">Second file for the comparison.</param>
+		/// <returns>True if files are identical otherwise false.</returns>
+		bool filesAreEqual(FileInfo first, FileInfo second)
+		{
+			if (first.Length != second.Length)
+				return false;
+
+			if (string.Equals(first.FullName, second.FullName, StringComparison.OrdinalIgnoreCase))
+				return true;
+
+			int iterations = (int)Math.Ceiling((double)first.Length / BYTES_TO_READ);
+
+			using (FileStream fs1 = first.OpenRead())
+			using (FileStream fs2 = second.OpenRead())
+			{
+				byte[] one = new byte[BYTES_TO_READ];
+				byte[] two = new byte[BYTES_TO_READ];
+
+				for (int i = 0; i < iterations; i++)
+				{
+					fs1.Read(one, 0, BYTES_TO_READ);
+					fs2.Read(two, 0, BYTES_TO_READ);
+
+					if (BitConverter.ToInt64(one, 0) != BitConverter.ToInt64(two, 0))
+						return false;
+				}
+			}
+
+			return true;
+		}
+	}
 }

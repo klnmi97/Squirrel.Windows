@@ -238,7 +238,14 @@ namespace Squirrel
 
 								// Rename the stub exe file after extraction.
 								if (failureIsOkay) {
-									File.Move(exeStubPath, exeStubPath.Replace("_ExecutionStub.exe", ".exe"));
+									string exeFinalPath = exeStubPath.Replace("_ExecutionStub.exe", ".exe");
+
+									// Delete target file if exists, as File.Move() does not support overwrite.
+									if (File.Exists(exeFinalPath)) {
+										File.Delete(exeFinalPath);
+									}
+
+									File.Move(exeStubPath, exeFinalPath);
 								}
 							}, 5);
                         } catch (Exception e) {

@@ -30,10 +30,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="bsdiff.exe">
+    <None Update="hdziff.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="bspatch.exe">
+    <None Update="hpatchz.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -128,7 +128,7 @@ namespace Squirrel
                     .Where(x => x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase))
                     .Where(x => !x.EndsWith(".shasum", StringComparison.InvariantCultureIgnoreCase))
                     .Where(x => !x.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase) ||
-                                !deltaPathRelativePaths.Contains(x.Replace(".diff", ".bsdiff")))
+                                !deltaPathRelativePaths.Contains(x.Replace(".diff", ".hdiffz")))
                     .ForEach(file => {
                         pathsVisited.Add(Regex.Replace(file, @"\.(bs)?diff$", "").ToLowerInvariant());
                         applyDiffToFile(deltaPath, file, workingPath);
@@ -213,32 +213,32 @@ namespace Squirrel
                     msDelta.CreateDelta(baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".diff");
                     goto exit;
                 } catch (Exception) {
-                    this.Log().Warn("We couldn't create a delta for {0}, attempting to create bsdiff", targetFile.Name);
+                    this.Log().Warn("We couldn't create a delta for {0}, attempting to create hdiffz", targetFile.Name);
                 }
             }
             
             try {
-				var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("bsdiff.exe"),
-										String.Format("{0} {1} {2}", baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".bsdiff"),
+				var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hdiffz.exe"),
+										String.Format("{0} {1} {2}", baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".hdiffz"),
 										CancellationToken.None);
 				task.Wait();
 
 				if (task.Result.Item1 != 0) {
 					this.Log().Warn(String.Format("We really couldn't create a delta for {0}", targetFile.Name));
-					Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
+					Utility.DeleteFileHarder(targetFile.FullName + ".hdiffz", true);
 					Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
 					return;
 				}
 
 				// NB: Create a dummy corrupt .diff file so that older 
-				// versions which don't understand bsdiff will fail out
+				// versions which don't understand hdiffz will fail out
 				// until they get upgraded, instead of seeing the missing
 				// file and just removing it.
 				File.WriteAllText(targetFile.FullName + ".diff", "1");
 			} catch (Exception ex) {
                 this.Log().WarnException(String.Format("We really couldn't create a delta for {0}", targetFile.Name), ex);
 
-                Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
+                Utility.DeleteFileHarder(targetFile.FullName + ".hdiffz", true);
                 Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
                 return;
             }
@@ -254,7 +254,7 @@ namespace Squirrel
 			}
 			catch (Exception ex) {
 				this.Log().WarnException(String.Format("We really couldn't create a delta for {0}. Error during shasum file creation.", targetFile.Name), ex);
-				Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
+				Utility.DeleteFileHarder(targetFile.FullName + ".hdiffz", true);
 				Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
 				Utility.DeleteFileHarder(targetFile.FullName + ".shasum", true);
 			}
@@ -263,6 +263,7 @@ namespace Squirrel
         void applyDiffToFile(string deltaPath, string relativeFilePath, string workingDirectory)
         {
             var inputFile = Path.Combine(deltaPath, relativeFilePath);
+            // TODO: change bsdiff to hdiffz
             var finalTarget = Path.Combine(workingDirectory, Regex.Replace(relativeFilePath, @"\.(bs)?diff$", ""));
 
             var tempTargetFile = default(string);
@@ -275,10 +276,10 @@ namespace Squirrel
                     return;
                 }
 
-                 if (relativeFilePath.EndsWith(".bsdiff", StringComparison.InvariantCultureIgnoreCase)) {
-					this.Log().Info("Applying BSDiff to {0}", relativeFilePath);
-					var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("bspatch.exe"),
-										String.Format("{0} {1} {2}", finalTarget, tempTargetFile, inputFile),
+                 if (relativeFilePath.EndsWith(".hdiffz", StringComparison.InvariantCultureIgnoreCase)) {
+					this.Log().Info("Applying HDiffz to {0}", relativeFilePath);
+					var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hpatchz.exe"),
+										String.Format("{0} {1} {2}", finalTarget, inputFile, tempTargetFile),
 										CancellationToken.None);
 					task.Wait();
 

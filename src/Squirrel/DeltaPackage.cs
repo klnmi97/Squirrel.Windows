@@ -130,7 +130,7 @@ namespace Squirrel
                     .Where(x => !x.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase) ||
                                 !deltaPathRelativePaths.Contains(x.Replace(".diff", ".hdiffz")))
                     .ForEach(file => {
-                        pathsVisited.Add(Regex.Replace(file, @"\.(bs)?diff$", "").ToLowerInvariant());
+                        pathsVisited.Add(Regex.Replace(file, @"\.(h)?diff(z)?$", "").ToLowerInvariant());
                         applyDiffToFile(deltaPath, file, workingPath);
                     });
 
@@ -263,7 +263,7 @@ namespace Squirrel
         void applyDiffToFile(string deltaPath, string relativeFilePath, string workingDirectory)
         {
             var inputFile = Path.Combine(deltaPath, relativeFilePath);
-            var finalTarget = Path.Combine(workingDirectory, Regex.Replace(relativeFilePath, @"\.(h)?diff(z)$", ""));
+            var finalTarget = Path.Combine(workingDirectory, Regex.Replace(relativeFilePath, @"\.(h)?diff(z)?$", ""));
 
             var tempTargetFile = default(string);
             Utility.WithTempFile(out tempTargetFile, localAppDirectory);
@@ -315,7 +315,7 @@ namespace Squirrel
 
         void verifyPatchedFile(string relativeFilePath, string inputFile, string tempTargetFile)
         {
-            var shaFile = Regex.Replace(inputFile, @"\.(h)?diff(z)$", ".shasum");
+            var shaFile = Regex.Replace(inputFile, @"\.(h)?diff(z)?$", ".shasum");
             var expectedReleaseEntry = ReleaseEntry.ParseReleaseEntry(File.ReadAllText(shaFile, Encoding.UTF8));
             var actualReleaseEntry = ReleaseEntry.GenerateFromFile(tempTargetFile);
 

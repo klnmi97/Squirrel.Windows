@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "Update": {
+      "commandName": "Project"
+    },
+    "Update - params": {
+      "commandName": "Project",
+      "commandLineArgs": "-releasify=c:\\git\\marc-updater\\MarcUpdater\\test\\ActionRPG-1.2.nupkg  -no-setups"
+    },
+    "Install": {
+      "commandName": "Project",
+      "commandLineArgs": "-install=c:\\git\\squirrel.windows\\build\\Debug\\net45\\Releases"
+    }
+  }
+}

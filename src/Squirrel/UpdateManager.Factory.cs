@@ -30,9 +30,9 @@ namespace Squirrel
             string repoUrl,
             string applicationName = null,
             string rootDirectory = null,
-            IFileDownloader urlDownloader = null,
             bool prerelease = false,
-            string accessToken = null)
+            string accessToken = null,
+			string updateToken = "")
         {
             var repoUri = new Uri(repoUrl);
             var userAgent = new ProductInfoHeaderValue("Squirrel", Assembly.GetExecutingAssembly().GetName().Version.ToString());
@@ -76,7 +76,7 @@ namespace Squirrel
 
                 var latestReleaseUrl = latestRelease.HtmlUrl.Replace("/tag/", "/download/");
 
-                return new UpdateManager(latestReleaseUrl, applicationName, rootDirectory, urlDownloader);
+                return new UpdateManager(latestReleaseUrl, applicationName, rootDirectory, updateToken);
             }
         }
     }

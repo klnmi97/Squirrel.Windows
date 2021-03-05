@@ -24,7 +24,6 @@ namespace Squirrel
     {
         readonly string rootAppDirectory;
         readonly string applicationName;
-        readonly IFileDownloader urlDownloader;
         readonly string updateUrlOrPath;
 
         IDisposable updateLock;
@@ -32,14 +31,13 @@ namespace Squirrel
         public UpdateManager(string urlOrPath, 
             string applicationName = null,
             string rootDirectory = null,
-            IFileDownloader urlDownloader = null)
+            string token = "")
         {
             Contract.Requires(!String.IsNullOrEmpty(urlOrPath));
             Contract.Requires(!String.IsNullOrEmpty(applicationName));
 
             updateUrlOrPath = urlOrPath;
             this.applicationName = applicationName ?? UpdateManager.getApplicationName();
-            this.urlDownloader = urlDownloader ?? new FileDownloader();
 
             if (rootDirectory != null) {
                 this.rootAppDirectory = Path.Combine(rootDirectory, this.applicationName);
@@ -47,14 +45,16 @@ namespace Squirrel
             }
 
             this.rootAppDirectory = Path.Combine(rootDirectory ?? GetLocalAppDataDirectory(), this.applicationName);
-        }
+
+			DownloadManager.Token = token;
+		}
 
         public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update)
         {
             var checkForUpdate = new CheckForUpdateImpl(rootAppDirectory);
 
             await acquireUpdateLock();
-            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, ignoreDeltaUpdates, progress, urlDownloader);
+            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, ignoreDeltaUpdates, progress);
         }
 
         public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)
@@ -62,7 +62,7 @@ namespace Squirrel
 			var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
             await acquireUpdateLock();
 
-			await downloadReleases.DownloadReleases(updateUrlOrPath, releasesToDownload, progress, urlDownloader);
+			await downloadReleases.DownloadReleases(updateUrlOrPath, releasesToDownload, progress);
         }
 
         public async Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null)

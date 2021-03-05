@@ -15,7 +15,6 @@ namespace Squirrel
 		private static readonly object instanceLock = new object();
 		private static DownloadManager instance = null;
 		private static DownloadResult lastError = DownloadResult.OK;
-
 		private const long parallelDownloadLimit = 100 * 1024 * 1024;
 
 		static bool test = false;		
@@ -33,6 +32,7 @@ namespace Squirrel
 			public long End { get; set; }
 		}
 
+		public static string Token { get; set; }
 		public static DownloadManager Instance
 		{
 			get
@@ -65,8 +65,6 @@ namespace Squirrel
 			long fileSize = 0;
 			int parallelDownloads = numberOfParallelDownloads;
 
-			lastError = DownloadResult.OK;
-
 			if (!validateSSL)
 			{
 				ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
@@ -92,7 +90,7 @@ namespace Squirrel
 
 			//DownloadResult result = new DownloadResult() { FilePath = destinationFilePath };
 
-			if ((fileSize = GetDownloadedFileSize(fileUrl)) == 0)
+			if ((fileSize = GetDownloadedFileSize(fileUrl+Token)) == 0)
 			{
 				return false;
 			}
@@ -109,9 +107,12 @@ namespace Squirrel
 
 			for (int i = 0; i < 3; i++)
 			{
-				if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, downloadFileTokenSource, tempFilesDictionary, parallelDownloads))
+				if (CheckForInternetConnection())
 				{
-					break;
+					if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, downloadFileTokenSource, tempFilesDictionary, parallelDownloads))
+					{
+						break;
+					}
 				}
 
 				if (lastError == DownloadResult.CONNECTION_EXCEPTION)
@@ -119,7 +120,8 @@ namespace Squirrel
 					break;
 				}
 
-				System.Threading.Thread.Sleep(10000);
+				System.Threading.Thread.Sleep(30000);
+
 				downloadFileTokenSource = new CancellationTokenSource();
 			}
 
@@ -146,7 +148,7 @@ namespace Squirrel
 			{
 				try
 				{
-					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
+					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl+ Token) as HttpWebRequest;
 					httpWebRequest.Method = "HEAD";
 					using (HttpWebResponse httpWebResponse = httpWebRequest.GetResponse() as HttpWebResponse)
 					{
@@ -179,6 +181,8 @@ namespace Squirrel
 
 		private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath, CancellationTokenSource cancellationTokenSource, ConcurrentDictionary<int, Tuple<string, bool>> tempFilesDictionary, int numberOfParallelDownloads = 0)
 		{
+			lastError = DownloadResult.OK;
+
 			if (File.Exists(destinationFilePath))
 			{
 				File.Delete(destinationFilePath);
@@ -212,7 +216,7 @@ namespace Squirrel
 				#region Parallel download  
 
 				Parallel.For(0, numberOfParallelDownloads, new ParallelOptions() { MaxDegreeOfParallelism = numberOfParallelDownloads }, (i, state) =>
-					RangeDownload(readRanges[i], i, state, cancellationTokenSource, fileUrl, tempFilesDictionary)
+					RangeDownload(readRanges[i], i, state, cancellationTokenSource, fileUrl+Token, tempFilesDictionary)
 				);
 
 				if (cancellationTokenSource.IsCancellationRequested)
@@ -258,7 +262,7 @@ namespace Squirrel
 			{
 				try
 				{
-					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
+					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl+Token) as HttpWebRequest;
 					httpWebRequest.Method = "GET";
 
 					//httpWebRequest.Timeout = 5*1000;

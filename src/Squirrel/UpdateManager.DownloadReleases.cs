@@ -19,10 +19,9 @@ namespace Squirrel
                 this.rootAppDirectory = rootAppDirectory;
             }
 
-            public async Task DownloadReleases(string updateUrlOrPath, IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null, IFileDownloader urlDownloader = null)
+            public async Task DownloadReleases(string updateUrlOrPath, IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)
             {
 				progress = progress ?? (_ => { });
-                urlDownloader = urlDownloader ?? new FileDownloader();
                 var packagesDirectory = Path.Combine(rootAppDirectory, "packages");
 
                 double current = 0;
@@ -47,7 +46,7 @@ namespace Squirrel
 					releasesToDownload.ForEach(x => {
 						var targetFile = Path.Combine(packagesDirectory, x.Filename);
 						double component = 0;
-						downloadRelease(updateUrlOrPath, x, urlDownloader, targetFile, p => {
+						downloadRelease(updateUrlOrPath, x, targetFile, p => {
 							lock (progress)
 							{
 								current -= component;
@@ -80,7 +79,7 @@ namespace Squirrel
                     Uri.IsWellFormedUriString(x.BaseUrl, UriKind.Absolute);
             }
 
-            void downloadRelease(string updateBaseUrl, ReleaseEntry releaseEntry, IFileDownloader urlDownloader, string targetFile, Action<int> progress)
+            void downloadRelease(string updateBaseUrl, ReleaseEntry releaseEntry, string targetFile, Action<int> progress)
             {
                 var baseUri = Utility.EnsureTrailingSlash(new Uri(updateBaseUrl));
 
@@ -94,7 +93,7 @@ namespace Squirrel
 				//return urlDownloader.DownloadFile(sourceFileUrl, targetFile, progress);
 				if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, 8))
 				{
-					throw new Exception();
+					throw new Exception("An error occured during the update download.");
 				}
             }
 

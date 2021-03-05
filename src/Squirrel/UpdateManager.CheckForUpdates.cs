@@ -25,8 +25,7 @@ namespace Squirrel
                 string localReleaseFile,
                 string updateUrlOrPath,
                 bool ignoreDeltaUpdates = false,
-                Action<int> progress = null,
-                IFileDownloader urlDownloader = null)
+                Action<int> progress = null)
             {
                 progress = progress ?? (_ => { });
 
@@ -62,33 +61,28 @@ namespace Squirrel
                     }
 
                     this.Log().Info("Downloading RELEASES file from {0}", updateUrlOrPath);
+                    
+                    var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), "RELEASES");
 
-                    int retries = 3;
+					// Not working with custom queries
+					/*if (latestLocalRelease != null) {
+                        uri = Utility.AddQueryParamsToUri(uri, new Dictionary<string, string> {
+                            { "id", latestLocalRelease.PackageName },
+                            { "localVersion", latestLocalRelease.Version.ToString() },
+                            { "arch", Environment.Is64BitOperatingSystem ? "amd64" : "x86" }
+                        });
+                    }*/
 
-                retry:
+					string tempFilePath = Path.GetTempFileName();
+					if (!DownloadManager.Instance.DownloadFile(uri.ToString(), tempFilePath, 1))
+					{
+						File.Delete(tempFilePath);
+						throw new Exception("An error occured during the update download.");
+					}
+					var data = File.ReadAllBytes(tempFilePath);
+					File.Delete(tempFilePath);
 
-                    try {
-                        var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), "RELEASES");
-
-                        // Not working with custom queries
-                        /*if (latestLocalRelease != null) {
-                            uri = Utility.AddQueryParamsToUri(uri, new Dictionary<string, string> {
-                                { "id", latestLocalRelease.PackageName },
-                                { "localVersion", latestLocalRelease.Version.ToString() },
-                                { "arch", Environment.Is64BitOperatingSystem ? "amd64" : "x86" }
-                            });
-                        }*/
-
-                        var data = await urlDownloader.DownloadUrl(uri.ToString());
-                        releaseFile = Encoding.UTF8.GetString(data);
-                    } catch (WebException ex) {
-                        this.Log().InfoException("Download resulted in WebException (returning blank release list)", ex);
-
-                        if (retries <= 0) throw;
-                        retries--;
-                        goto retry;
-                    }
-
+                    releaseFile = Encoding.UTF8.GetString(data);
                     progress(33);
                 } else {
                     this.Log().Info("Reading RELEASES file from {0}", updateUrlOrPath);

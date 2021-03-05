@@ -91,7 +91,7 @@ namespace Squirrel
                 File.Delete(targetFile);
 
 				//return urlDownloader.DownloadFile(sourceFileUrl, targetFile, progress);
-				if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, 8))
+				if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, 8, progress))
 				{
 					throw new Exception("An error occured during the update download.");
 				}

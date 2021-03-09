@@ -157,11 +157,11 @@ namespace Squirrel
                     "Failed to check for updates");
 
                 await This.ErrorIfThrows(() =>
-                    This.DownloadReleases(updateInfo.ReleasesToApply, x => progress(x / 10 + 10)),
+                    This.DownloadReleases(updateInfo.ReleasesToApply, x => progress(Convert.ToInt32(x * 0.45 + 10))),
                     "Failed to download updates");
 
                 await This.ErrorIfThrows(() =>
-                    This.ApplyReleases(updateInfo, x => progress(x / 10 + 55)),
+                    This.ApplyReleases(updateInfo, x => progress(Convert.ToInt32(x * 0.45 + 55))),
                     "Failed to apply updates");
 
                 await This.ErrorIfThrows(() => 

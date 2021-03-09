@@ -26,8 +26,9 @@ namespace Squirrel
             public string HtmlUrl { get; set; }
         }
 
-        public static async Task<UpdateManager> GitHubUpdateManager(
-            string repoUrl,
+		public static async Task<UpdateManager> GitHubUpdateManager(
+			string repoUrl,
+			int parallelDownloadLimit,
             string applicationName = null,
             string rootDirectory = null,
             bool prerelease = false,
@@ -76,7 +77,7 @@ namespace Squirrel
 
                 var latestReleaseUrl = latestRelease.HtmlUrl.Replace("/tag/", "/download/");
 
-                return new UpdateManager(latestReleaseUrl, applicationName, rootDirectory, updateToken);
+                return new UpdateManager(latestReleaseUrl, applicationName, rootDirectory, updateToken, parallelDownloadLimit);
             }
         }
     }

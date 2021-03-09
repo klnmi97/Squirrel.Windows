@@ -1,4 +1,4 @@
-﻿using NuGet;
+using NuGet;
 using Squirrel.SimpleSplat;
 using Squirrel.Json;
 using System;
@@ -103,17 +103,17 @@ namespace Squirrel.Update
                         AnimatedGifWindow.ShowWindow(TimeSpan.FromSeconds(4), animatedGifWindowToken.Token, progressSource);
                     }
 
-                    Install(opt.silentInstall, progressSource, Path.GetFullPath(opt.target)).Wait();
+                    Install(opt.silentInstall, progressSource, opt.parallelDownloadLimit, Path.GetFullPath(opt.target)).Wait();
                     animatedGifWindowToken.Cancel();
                     break;
                 case UpdateAction.Uninstall:
                     Uninstall().Wait();
                     break;
                 case UpdateAction.Download:
-                    Console.WriteLine(Download(opt.target).Result);
+                    Console.WriteLine(Download(opt.target, opt.parallelDownloadLimit).Result);
                     break;
                 case UpdateAction.Update:
-                    Update(opt.target).Wait();
+                    Update(opt.target, opt.parallelDownloadLimit).Wait();
                     break;
                 case UpdateAction.CheckForUpdate:
                     Console.WriteLine(CheckForUpdate(opt.target).Result);
@@ -140,7 +140,7 @@ namespace Squirrel.Update
             return 0;
         }
 
-        public async Task Install(bool silentInstall, ProgressSource progressSource, string sourceDirectory = null)
+        public async Task Install(bool silentInstall, ProgressSource progressSource, int parallelDownloadLimit, string sourceDirectory = null)
         {
             sourceDirectory = sourceDirectory ?? Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             var releasesPath = Path.Combine(sourceDirectory, "RELEASES");
@@ -159,7 +159,7 @@ namespace Squirrel.Update
             var ourAppName = ReleaseEntry.ParseReleaseFile(File.ReadAllText(releasesPath, Encoding.UTF8))
                 .First().PackageName;
 
-            using (var mgr = new UpdateManager(sourceDirectory, ourAppName)) {
+            using (var mgr = new UpdateManager(sourceDirectory, ourAppName, parallelDownloadLimit: parallelDownloadLimit)) {
                 this.Log().Info("About to install to: " + mgr.RootAppDirectory);
                 if (Directory.Exists(mgr.RootAppDirectory)) {
                     this.Log().Warn("Install path {0} already exists, burning it to the ground", mgr.RootAppDirectory);
@@ -187,13 +187,13 @@ namespace Squirrel.Update
             }
         }
 
-        public async Task Update(string updateUrl, string appName = null)
+        public async Task Update(string updateUrl, int parallelDownloadLimit, string appName = null)
         {
             appName = appName ?? getAppNameFromDirectory();
 
             this.Log().Info("Starting update, downloading from " + updateUrl);
 
-            using (var mgr = new UpdateManager(updateUrl, appName)) {
+            using (var mgr = new UpdateManager(updateUrl, appName, parallelDownloadLimit: parallelDownloadLimit)) {
                 bool ignoreDeltaUpdates = false;
                 this.Log().Info("About to update to: " + mgr.RootAppDirectory);
 
@@ -239,12 +239,12 @@ namespace Squirrel.Update
             });
         }
 
-        public async Task<string> Download(string updateUrl, string appName = null)
+        public async Task<string> Download(string updateUrl, int parallelDownloadLimit, string appName = null)
         {
             appName = appName ?? getAppNameFromDirectory();
 
             this.Log().Info("Fetching update information, downloading from " + updateUrl);
-            using (var mgr = new UpdateManager(updateUrl, appName)) {
+            using (var mgr = new UpdateManager(updateUrl, appName, parallelDownloadLimit: parallelDownloadLimit)) {
                 var updateInfo = await mgr.CheckForUpdate(intention: UpdaterIntention.Update, progress: x => Console.WriteLine(x / 3));
                 await mgr.DownloadReleases(updateInfo.ReleasesToApply, x => Console.WriteLine(33 + x / 3));
 

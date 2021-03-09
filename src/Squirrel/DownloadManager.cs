@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -32,6 +31,13 @@ namespace Squirrel
 			public long End { get; set; }
 		}
 
+		private class FilePartInfo
+		{
+			public string FilePath { get; set; }
+			public int Progress { get; set; }
+			public bool Finished { get; set; }
+		}
+
 		public static string Token { get; set; }
 		public static DownloadManager Instance
 		{
@@ -60,7 +66,7 @@ namespace Squirrel
 			CancellationTokenSource downloadFileTokenSource = new CancellationTokenSource();
 			CancellationTokenSource netCheckerTokenSource = new CancellationTokenSource();
 			bool downloadExitCode = false;
-			ConcurrentDictionary<int, Tuple<string, bool>> tempFilesDictionary = new ConcurrentDictionary<int, Tuple<string, bool>>();
+			FilePartInfo[] filePartsInfo;
 			long fileSize = 0;
 			int parallelDownloads = numberOfParallelDownloads;
 
@@ -83,13 +89,13 @@ namespace Squirrel
 						downloadFileTokenSource.Cancel();
 					}
 
-					Thread.Sleep(5000);
+					Thread.Sleep(100);
 				}
 			}, TaskCreationOptions.LongRunning, netCheckerTokenSource.Token);
 
 			//DownloadResult result = new DownloadResult() { FilePath = destinationFilePath };
 
-			if ((fileSize = GetDownloadedFileSize(fileUrl + Token)) == 0)
+			if ((fileSize = GetDownloadedFileSize(fileUrl)) == 0)
 			{
 				return false;
 			}
@@ -104,11 +110,18 @@ namespace Squirrel
 				parallelDownloads = Environment.ProcessorCount;
 			}
 
+			filePartsInfo = new FilePartInfo[parallelDownloads];
+
+			for (int i = 0; i < parallelDownloads; i++)
+			{
+				filePartsInfo[i] = new FilePartInfo();
+			}
+
 			for (int i = 0; i < 3; i++)
 			{
 				if (CheckForInternetConnection())
 				{
-					if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, downloadFileTokenSource, tempFilesDictionary, progress, parallelDownloads))
+					if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, downloadFileTokenSource, filePartsInfo, progress, parallelDownloads))
 					{
 						break;
 					}
@@ -123,9 +136,12 @@ namespace Squirrel
 				downloadFileTokenSource = new CancellationTokenSource();
 			}
 
-			foreach (var tempFile in tempFilesDictionary)
+			lock (filePartsInfo.SyncRoot)
 			{
-				File.Delete(tempFile.Value.Item1);
+				foreach (var filePart in filePartsInfo)
+				{
+					File.Delete(filePart.FilePath);
+				}
 			}
 
 			netCheckerTokenSource.Cancel();
@@ -177,7 +193,8 @@ namespace Squirrel
 			return responseLength;
 		}
 
-		private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath, CancellationTokenSource cancellationTokenSource, ConcurrentDictionary<int, Tuple<string, bool>> tempFilesDictionary, Action<int> progress, int numberOfParallelDownloads = 0)
+		private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath, CancellationTokenSource cancellationTokenSource,
+			FilePartInfo[] filePartsInfo, Action<int> progress, int numberOfParallelDownloads = 0)
 		{
 			lastError = DownloadResult.OK;
 
@@ -213,10 +230,8 @@ namespace Squirrel
 
 				#region Parallel download
 
-				int[] progressArray = new int[numberOfParallelDownloads];
-
 				Parallel.For(0, numberOfParallelDownloads, new ParallelOptions() { MaxDegreeOfParallelism = numberOfParallelDownloads }, (i, state) =>
-					RangeDownload(readRanges[i], i, state, cancellationTokenSource, fileUrl + Token, tempFilesDictionary, progress, progressArray)
+					RangeDownload(readRanges[i], i, state, cancellationTokenSource, fileUrl, filePartsInfo, progress)
 				);
 
 				if (cancellationTokenSource.IsCancellationRequested)
@@ -230,31 +245,35 @@ namespace Squirrel
 
 				//result.TimeTaken = DateTime.Now.Subtract(startTime);
 
-				// Check all chunks if they were downloaded successfuly.
-				foreach (var tempFile in tempFilesDictionary)
+				lock (filePartsInfo.SyncRoot)
 				{
-					if (!tempFile.Value.Item2)
+					// Check all chunks if they were downloaded successfuly.
+					foreach (var filePart in filePartsInfo)
 					{
-						return false;
+						if (!filePart.Finished)
+						{
+							return false;
+						}
 					}
+
+					#region Merge to single file 
+
+					foreach (var filePart in filePartsInfo)
+					{
+						byte[] filePartBytes = File.ReadAllBytes(filePart.FilePath);
+						destinationStream.Write(filePartBytes, 0, filePartBytes.Length);
+						File.Delete(filePart.FilePath);
+					}
+
+					#endregion
 				}
-
-				#region Merge to single file 
-
-				foreach (var tempFile in tempFilesDictionary.OrderBy(b => b.Key))
-				{
-					byte[] tempFileBytes = File.ReadAllBytes(tempFile.Value.Item1);
-					destinationStream.Write(tempFileBytes, 0, tempFileBytes.Length);
-					File.Delete(tempFile.Value.Item1);
-				}
-
-				#endregion
 
 				return true;
 			}
 		}
 
-		private void RangeDownload(Range readRange, int index, ParallelLoopState state, CancellationTokenSource cancellationTokenSource, string fileUrl, ConcurrentDictionary<int, Tuple<string, bool>> tempFilesDictionary, Action<int> progress, int[] progressArray)
+		private void RangeDownload(Range readRange, int index, ParallelLoopState state, CancellationTokenSource cancellationTokenSource, string fileUrl,
+			FilePartInfo[] filePartsInfo, Action<int> progress)
 		{
 			string tempFilePath = "";
 
@@ -268,19 +287,22 @@ namespace Squirrel
 					//httpWebRequest.Timeout = 5*1000;
 					//bool test = httpWebRequest.KeepAlive;
 
-					Tuple<string, bool> tempFileTuple;
-
-					if (tempFilesDictionary.TryGetValue(index, out tempFileTuple))
+					lock (filePartsInfo.SyncRoot)
 					{
-						if (tempFileTuple.Item2)
+						if (filePartsInfo[index].FilePath != null)
 						{
-							return;
+							if (filePartsInfo[index].Finished)
+							{
+								return;
+							}
+
+							tempFilePath = filePartsInfo[index].FilePath;
 						}
-					}
-					else
-					{
-						tempFilePath = Path.GetTempFileName();
-						tempFilesDictionary.TryAdd(index, new Tuple<string, bool>(tempFilePath, false));
+						else
+						{
+							tempFilePath = Path.GetTempFileName();
+							filePartsInfo[index].FilePath = tempFilePath;
+						}
 					}
 
 					httpWebRequest.AddRange(readRange.Start, readRange.End);
@@ -307,16 +329,24 @@ namespace Squirrel
 
 								if (currentBytes <= 0)
 								{
-									tempFilesDictionary[index] = new Tuple<string, bool>(tempFilePath, true);
-									UpdateProgress(progress, progressArray);
+									lock (filePartsInfo.SyncRoot)
+									{
+										filePartsInfo[index].Finished = true;
+									}
+
+									UpdateProgress(progress, filePartsInfo);
 									return;
 								}
 
 								fileStream.Write(buffer, 0, currentBytes);
 								bytesCounter += currentBytes;
 
-								progressArray[index] = (int)((bytesCounter * 100) / (readRange.End - readRange.Start));
-								UpdateProgress(progress, progressArray);
+								lock (filePartsInfo.SyncRoot)
+								{
+									filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (readRange.End - readRange.Start));
+								}
+
+								UpdateProgress(progress, filePartsInfo);
 
 								//if (bytesCounter > 1024 * 1024 * 30)
 								//{
@@ -337,7 +367,7 @@ namespace Squirrel
 						}
 					}
 				}
-				catch (WebException)
+				catch (WebException e)
 				{
 					//if (e.Status == WebExceptionStatus.Timeout || e.Status == WebExceptionStatus.KeepAliveFailure)
 					Console.WriteLine("WebException catched");
@@ -345,15 +375,26 @@ namespace Squirrel
 				}
 				catch (OperationCanceledException)
 				{
-					return;
+					if (state.IsStopped)
+					{
+						return;
+					}
 				}
-				catch (Exception)
+				catch (Exception e)
 				{
 					Console.WriteLine("Exception catched");
 					System.Threading.Thread.Sleep(5000);
 				}
 
-				progressArray[index] = 0;
+				lock (filePartsInfo.SyncRoot)
+				{
+					filePartsInfo[index].Progress = 0;
+				}
+
+				if (state.IsStopped)
+				{
+					return;
+				}
 			}
 
 			// This chunk cannot be downloaded, discard the whole file downloading.
@@ -387,9 +428,12 @@ namespace Squirrel
 			}
 		}
 
-		private void UpdateProgress(Action<int> progress, int[] progressArray)
+		private void UpdateProgress(Action<int> progress, FilePartInfo[] filePartsInfo)
 		{
-			progress(progressArray.Sum() / progressArray.Length);
+			lock (filePartsInfo.SyncRoot)
+			{
+				progress(filePartsInfo.Sum(x => x.Progress) / filePartsInfo.Length);
+			}
 		}
 	}
 }

@@ -142,7 +142,7 @@ namespace Squirrel
 
     public static class EasyModeMixin
     {
-        public static async Task<ReleaseEntry> UpdateApp(this IUpdateManager This, int parallelDownloadLimit, Action<int> progress = null)
+        public static async Task<ReleaseEntry> UpdateApp(this IUpdateManager This, Action<int> progress = null)
         {
             progress = progress ?? (_ => {});
             This.Log().Info("Starting automatic update");

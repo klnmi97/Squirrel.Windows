@@ -81,7 +81,7 @@ namespace Squirrel.Tests
                 ReleaseEntry.WriteReleaseFile(pkgs, Path.Combine(remotePkgDir, "RELEASES"));
 
                 using (var fixture = new UpdateManager(remotePkgDir, "theApp", tempDir)) {
-                    await fixture.UpdateApp(1);
+                    await fixture.UpdateApp();
                 }
 
                 await Task.Delay(1000);
@@ -117,14 +117,14 @@ namespace Squirrel.Tests
                 ReleaseEntry.WriteReleaseFile(pkgs, Path.Combine(remotePkgDir, "RELEASES"));
 
                 using (var fixture = new UpdateManager(remotePkgDir, "theApp", tempDir)) {
-                    await fixture.UpdateApp(1);
+                    await fixture.UpdateApp();
                 }
 
                 await Task.Delay(1000);
 
                 // NB: The 2nd time we won't have any updates to apply. We should just do nothing!
                 using (var fixture = new UpdateManager(remotePkgDir, "theApp", tempDir)) {
-                    await fixture.UpdateApp(1);
+                    await fixture.UpdateApp();
                 }
 
                 await Task.Delay(1000);
@@ -154,7 +154,7 @@ namespace Squirrel.Tests
                 ReleaseEntry.WriteReleaseFile(pkgs, Path.Combine(remotePkgDir, "RELEASES"));
 
                 using (var fixture = new UpdateManager(remotePkgDir, "theApp", tempDir)) {
-                    await fixture.UpdateApp(1);
+                    await fixture.UpdateApp();
                 }
 
                 await Task.Delay(1000);

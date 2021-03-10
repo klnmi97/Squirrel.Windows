@@ -24,6 +24,7 @@ namespace Squirrel
                 UpdaterIntention intention,
                 string localReleaseFile,
                 string updateUrlOrPath,
+				string token,
                 bool ignoreDeltaUpdates = false,
                 Action<int> progress = null)
             {
@@ -74,7 +75,7 @@ namespace Squirrel
                     }*/
 
 					string tempFilePath = Path.GetTempFileName();
-					if (!DownloadManager.Instance.DownloadFile(uri.ToString(), tempFilePath, 1, progress))
+					if (!DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress))
 					{
 						File.Delete(tempFilePath);
 						throw new Exception("An error occured during the update download.");

@@ -26,6 +26,7 @@ namespace Squirrel
         readonly string applicationName;
         readonly string updateUrlOrPath;
 		readonly int parallelDownloadLimit;
+		readonly string token;
 
         IDisposable updateLock;
 
@@ -48,7 +49,7 @@ namespace Squirrel
 
             this.rootAppDirectory = Path.Combine(rootDirectory ?? GetLocalAppDataDirectory(), this.applicationName);
 
-			DownloadManager.Token = token;
+			this.token = token;
 			this.parallelDownloadLimit = parallelDownloadLimit;
 		}
 
@@ -57,7 +58,7 @@ namespace Squirrel
             var checkForUpdate = new CheckForUpdateImpl(rootAppDirectory);
 
             await acquireUpdateLock();
-            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, ignoreDeltaUpdates, progress);
+            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, ignoreDeltaUpdates, progress);
         }
 
         public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)
@@ -65,7 +66,7 @@ namespace Squirrel
 			var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
             await acquireUpdateLock();
 
-			await downloadReleases.DownloadReleases(updateUrlOrPath, releasesToDownload, parallelDownloadLimit, progress);
+			await downloadReleases.DownloadReleases(updateUrlOrPath, token, releasesToDownload, parallelDownloadLimit, progress);
         }
 
         public async Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null)

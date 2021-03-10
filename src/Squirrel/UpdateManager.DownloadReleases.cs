@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Squirrel.SimpleSplat;
 
@@ -19,7 +18,7 @@ namespace Squirrel
                 this.rootAppDirectory = rootAppDirectory;
             }
 
-            public async Task DownloadReleases(string updateUrlOrPath, IEnumerable<ReleaseEntry> releasesToDownload, int parallelDownloadLimit, Action<int> progress = null)
+            public async Task DownloadReleases(string updateUrlOrPath, string token, IEnumerable<ReleaseEntry> releasesToDownload, int parallelDownloadLimit, Action<int> progress = null)
             {
 				progress = progress ?? (_ => { });
                 var packagesDirectory = Path.Combine(rootAppDirectory, "packages");
@@ -46,7 +45,7 @@ namespace Squirrel
 					releasesToDownload.ForEach(x => {
 						var targetFile = Path.Combine(packagesDirectory, x.Filename);
 						double component = 0;
-						downloadRelease(updateUrlOrPath, x, targetFile, parallelDownloadLimit, p => {
+						downloadRelease(updateUrlOrPath, token, x, targetFile, parallelDownloadLimit, p => {
 							lock (progress)
 							{
 								current -= component;
@@ -79,18 +78,21 @@ namespace Squirrel
                     Uri.IsWellFormedUriString(x.BaseUrl, UriKind.Absolute);
             }
 
-            void downloadRelease(string updateBaseUrl, ReleaseEntry releaseEntry, string targetFile, int parallelDownloadLimit, Action<int> progress)
+            void downloadRelease(string updateBaseUrl, string token, ReleaseEntry releaseEntry, string targetFile, int parallelDownloadLimit, Action<int> progress)
             {
                 var baseUri = Utility.EnsureTrailingSlash(new Uri(updateBaseUrl));
 
                 var releaseEntryUrl = releaseEntry.BaseUrl + releaseEntry.Filename;
                 if (!String.IsNullOrEmpty(releaseEntry.Query)) {
-                    releaseEntryUrl += releaseEntry.Query;
+                    releaseEntryUrl += releaseEntry.Query + "&" + token.Substring(1);
                 }
+				else {
+					releaseEntryUrl += token;
+				}
+
                 var sourceFileUrl = new Uri(baseUri, releaseEntryUrl).AbsoluteUri;
                 File.Delete(targetFile);
 
-				//return urlDownloader.DownloadFile(sourceFileUrl, targetFile, progress);
 				if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress))
 				{
 					throw new Exception("An error occured during the update download.");

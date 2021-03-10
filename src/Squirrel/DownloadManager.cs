@@ -37,8 +37,7 @@ namespace Squirrel
 			public int Progress { get; set; }
 			public bool Finished { get; set; }
 		}
-
-		public static string Token { get; set; }
+		
 		public static DownloadManager Instance
 		{
 			get
@@ -162,7 +161,7 @@ namespace Squirrel
 			{
 				try
 				{
-					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl + Token) as HttpWebRequest;
+					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
 					httpWebRequest.Method = "HEAD";
 					using (HttpWebResponse httpWebResponse = httpWebRequest.GetResponse() as HttpWebResponse)
 					{
@@ -281,7 +280,7 @@ namespace Squirrel
 			{
 				try
 				{
-					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl + Token) as HttpWebRequest;
+					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
 					httpWebRequest.Method = "GET";
 
 					//httpWebRequest.Timeout = 5*1000;

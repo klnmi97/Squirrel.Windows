@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Squirrel.SimpleSplat;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,16 +9,24 @@ using System.Threading.Tasks;
 
 namespace Squirrel
 {
-	public sealed class DownloadManager
+	public sealed class DownloadManager : IEnableLogger
 	{
+		/// <summary>Singleton's lock.</summary>
 		private static readonly object instanceLock = new object();
+
+		/// <summary>Singleton.</summary>
 		private static DownloadManager instance = null;
+
+		/// <summary>Last error which occured during parallel parts download.</summary>
 		private static DownloadResult lastError = DownloadResult.OK;
+
+		/// <summary>Below this limit (in bytes) is not possible to download file in parallel.</summary>
 		private const long parallelDownloadLimit = 100 * 1024 * 1024;
+
+		/// <summary>Buffer size for asynchronous reading of stream from the body of http response.</summary>
 		private const long bufferSize = 10 * 1024 * 1024;
 
-		static bool test = false;
-
+		/// <summary> Enumeration with possible parallel download results. </summary>
 		enum DownloadResult
 		{
 			OK,
@@ -25,19 +34,28 @@ namespace Squirrel
 			CONNECTION_EXCEPTION
 		}
 
+		/// <summary>
+		/// Download range of the file part.
+		/// TODO: PO - could be in the FilePartInfo
+		/// </summary>
 		private class Range
 		{
 			public long Start { get; set; }
 			public long End { get; set; }
 		}
 
+		/// <summary> Holds info about downloaded file part. </summary>
 		private class FilePartInfo
 		{
+			/// <summary> Path to the temporary file for the downloaded part. </summary>
 			public string FilePath { get; set; }
+			/// <summary> Current progress of the downloaded part. </summary>
 			public int Progress { get; set; }
+			/// <summary> Flag which indicates if the part is successfully downloaded. </summary>
 			public bool Finished { get; set; }
 		}
-		
+
+		/// <summary> Singleton property. </summary>
 		public static DownloadManager Instance
 		{
 			get
@@ -92,14 +110,12 @@ namespace Squirrel
 				}
 			}, TaskCreationOptions.LongRunning, netCheckerTokenSource.Token);
 
-			//DownloadResult result = new DownloadResult() { FilePath = destinationFilePath };
-
 			if ((fileSize = GetDownloadedFileSize(fileUrl)) == 0)
 			{
 				return false;
 			}
 
-			//Handle number of parallel downloads  
+			// Handle number of parallel downloads.
 			if (fileSize < parallelDownloadLimit)
 			{
 				parallelDownloads = 1;
@@ -173,18 +189,12 @@ namespace Squirrel
 
 						// TODO: check for partial content support
 						responseLength = long.Parse(httpWebResponse.Headers.Get("Content-Length"));
-						//result.Size = responseLength;
 						break;
 					}
 				}
-				catch (WebException)
+				catch (Exception ex)
 				{
-					Console.WriteLine("WebException catched");
-					System.Threading.Thread.Sleep(5000);
-				}
-				catch (Exception)
-				{
-					Console.WriteLine("Exception catched");
+					this.Log().WarnException(String.Format("Couldn't get HEAD with file size."), ex);
 					System.Threading.Thread.Sleep(5000);
 				}
 			}
@@ -225,8 +235,6 @@ namespace Squirrel
 
 				#endregion
 
-				//DateTime startTime = DateTime.Now;
-
 				#region Parallel download
 
 				Parallel.For(0, numberOfParallelDownloads, new ParallelOptions() { MaxDegreeOfParallelism = numberOfParallelDownloads }, (i, state) =>
@@ -238,11 +246,7 @@ namespace Squirrel
 					return false;
 				}
 
-				//result.ParallelDownloads = index;
-
 				#endregion
-
-				//result.TimeTaken = DateTime.Now.Subtract(startTime);
 
 				lock (filePartsInfo.SyncRoot)
 				{
@@ -283,9 +287,6 @@ namespace Squirrel
 					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
 					httpWebRequest.Method = "GET";
 
-					//httpWebRequest.Timeout = 5*1000;
-					//bool test = httpWebRequest.KeepAlive;
-
 					lock (filePartsInfo.SyncRoot)
 					{
 						if (filePartsInfo[index].FilePath != null)
@@ -321,7 +322,6 @@ namespace Squirrel
 
 							while (true)
 							{
-								//int currentBytes = stream.Read(buffer, 0, bufferSize);
 								Task<int> readTask = httpWebResponse.GetResponseStream().ReadAsync(buffer, 0, buffer.Length);
 								readTask.Wait(cancellationTokenSource.Token);
 								int currentBytes = readTask.Result;
@@ -347,11 +347,6 @@ namespace Squirrel
 
 								UpdateProgress(progress, filePartsInfo);
 
-								//if (bytesCounter > 1024 * 1024 * 30)
-								//{
-								//	throw new WebException();
-								//}
-
 								if (state.IsStopped)
 								{
 									return;
@@ -366,22 +361,18 @@ namespace Squirrel
 						}
 					}
 				}
-				catch (WebException e)
+				catch (OperationCanceledException ex)
 				{
-					//if (e.Status == WebExceptionStatus.Timeout || e.Status == WebExceptionStatus.KeepAliveFailure)
-					Console.WriteLine("WebException catched");
-					System.Threading.Thread.Sleep(5000);
-				}
-				catch (OperationCanceledException)
-				{
+					this.Log().WarnException(String.Format("Downloading of the chunk number {0} was cancelled.", index), ex);
+
 					if (state.IsStopped)
 					{
 						return;
 					}
 				}
-				catch (Exception e)
+				catch (Exception ex)
 				{
-					Console.WriteLine("Exception catched");
+					this.Log().WarnException(String.Format("Couldn't download file chunk number {0}.", index), ex);
 					System.Threading.Thread.Sleep(5000);
 				}
 

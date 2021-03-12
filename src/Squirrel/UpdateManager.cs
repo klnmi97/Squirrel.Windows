@@ -34,8 +34,9 @@ namespace Squirrel
             string applicationName = null,
             string rootDirectory = null,
             string token = "",
-			int parallelDownloadLimit = 1)
-        {
+			int parallelDownloadLimit = 1,
+			string netCheckUrl = "http://google.com/generate_204")
+		{
             Contract.Requires(!String.IsNullOrEmpty(urlOrPath));
             Contract.Requires(!String.IsNullOrEmpty(applicationName));
 
@@ -51,6 +52,7 @@ namespace Squirrel
 
 			this.token = token;
 			this.parallelDownloadLimit = parallelDownloadLimit;
+			DownloadManager.Instance.NetCheckUrl = netCheckUrl;
 		}
 
         public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update)

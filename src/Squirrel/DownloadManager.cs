@@ -209,6 +209,7 @@ namespace Squirrel
 				{
 					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
 					httpWebRequest.Method = "HEAD";
+					httpWebRequest.Proxy = WebRequest.DefaultWebProxy;
 					using (HttpWebResponse httpWebResponse = httpWebRequest.GetResponse() as HttpWebResponse)
 					{
 						if (httpWebResponse.StatusCode != HttpStatusCode.OK)
@@ -316,6 +317,7 @@ namespace Squirrel
 				{
 					HttpWebRequest httpWebRequest = HttpWebRequest.Create(fileUrl) as HttpWebRequest;
 					httpWebRequest.Method = "GET";
+					httpWebRequest.Proxy = WebRequest.DefaultWebProxy;
 
 					lock (filePartsInfo.SyncRoot)
 					{
@@ -446,8 +448,11 @@ namespace Squirrel
 			try
 			{
 				using (var client = new WebClient())
-				using (client.OpenRead(NetCheckUrl))
-					return true;
+				{
+					client.Proxy = WebRequest.DefaultWebProxy;
+					using (client.OpenRead(NetCheckUrl))
+						return true;
+				}
 			}
 			catch
 			{

@@ -18,15 +18,20 @@ namespace Squirrel
 		private static DownloadManager instance = null;
 
 		/// <summary>Last error which occured during parallel parts download.</summary>
-		private static DownloadResult lastError = DownloadResult.OK;
+		private static volatile DownloadResult lastError = DownloadResult.OK;
 
 		/// <summary>Below this limit (in bytes) is not possible to download file in parallel.</summary>
 		private const long parallelDownloadLimit = 100 * 1024 * 1024;
 
 		/// <summary>Buffer size for asynchronous reading of stream from the body of http response.</summary>
-		private const long bufferSize = 10 * 1024 * 1024;
+		private const long bufferSize = 1 * 1024 * 1024;
 
-		/// <summary> Enumeration with possible parallel download results. </summary>
+		/// <summary>Timeout (in milliseconds) for the body of http response reading.</summary>
+		private const int streamReadTimeout = 5 * 60 * 1000;
+
+		private CancellationTokenSource downloadFileTokenSource;
+
+		/// <summary> Enumeration with possible parallel download results.</summary>
 		enum DownloadResult
 		{
 			OK,
@@ -80,8 +85,8 @@ namespace Squirrel
 
 		public bool DownloadFile(string fileUrl, string destinationFilePath, int numberOfParallelDownloads, Action<int> progress, bool validateSSL = false)
 		{
-			CancellationTokenSource downloadFileTokenSource = new CancellationTokenSource();
 			CancellationTokenSource netCheckerTokenSource = new CancellationTokenSource();
+			downloadFileTokenSource = new CancellationTokenSource();
 			bool downloadExitCode = false;
 			FilePartInfo[] filePartsInfo;
 			long fileSize = 0;
@@ -92,23 +97,7 @@ namespace Squirrel
 				ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
 			}
 
-			Task netCheckerTask = Task.Factory.StartNew(o =>
-			{
-				while (true)
-				{
-					if (netCheckerTokenSource.Token.IsCancellationRequested)
-					{
-						break;
-					}
-
-					if (!CheckForInternetConnection())
-					{
-						downloadFileTokenSource.Cancel();
-					}
-
-					Thread.Sleep(100);
-				}
-			}, TaskCreationOptions.LongRunning, netCheckerTokenSource.Token);
+			Task netCheckerTask = CreateNetCheckerTask(netCheckerTokenSource);
 
 			if ((fileSize = GetDownloadedFileSize(fileUrl)) == 0)
 			{
@@ -136,7 +125,7 @@ namespace Squirrel
 			{
 				if (CheckForInternetConnection())
 				{
-					if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, downloadFileTokenSource, filePartsInfo, progress, parallelDownloads))
+					if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, filePartsInfo, progress, parallelDownloads))
 					{
 						break;
 					}
@@ -167,6 +156,45 @@ namespace Squirrel
 			}
 
 			return true;
+		}
+
+		private Task CreateNetCheckerTask(CancellationTokenSource netCheckerTokenSource)
+		{
+			return Task.Factory.StartNew(o =>
+			{
+				int counter = 0;
+
+				while (true)
+				{
+					if (netCheckerTokenSource.Token.IsCancellationRequested)
+					{
+						break;
+					}
+
+					if (CheckForInternetConnection())
+					{
+						if (counter >= 6)
+						{
+							this.Log().Info(String.Format("Internet connection is back alive."));
+						}
+
+						counter = 0;
+					}
+					else
+					{
+						counter++;
+					}
+
+					// At least 5 seconds without internet connection.
+					if (counter >= 6)
+					{
+						this.Log().Info(String.Format("Internet connection lost."));
+						downloadFileTokenSource.Cancel();
+					}
+
+					Thread.Sleep(1000);
+				}
+			}, TaskCreationOptions.LongRunning, netCheckerTokenSource.Token);
 		}
 
 		private long GetDownloadedFileSize(string fileUrl)
@@ -202,7 +230,7 @@ namespace Squirrel
 			return responseLength;
 		}
 
-		private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath, CancellationTokenSource cancellationTokenSource,
+		private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath,
 			FilePartInfo[] filePartsInfo, Action<int> progress, int numberOfParallelDownloads = 0)
 		{
 			lastError = DownloadResult.OK;
@@ -238,10 +266,10 @@ namespace Squirrel
 				#region Parallel download
 
 				Parallel.For(0, numberOfParallelDownloads, new ParallelOptions() { MaxDegreeOfParallelism = numberOfParallelDownloads }, (i, state) =>
-					RangeDownload(readRanges[i], i, state, cancellationTokenSource, fileUrl, filePartsInfo, progress)
+					RangeDownload(readRanges[i], i, state, fileUrl, filePartsInfo, progress)
 				);
 
-				if (cancellationTokenSource.IsCancellationRequested)
+				if (downloadFileTokenSource.IsCancellationRequested)
 				{
 					return false;
 				}
@@ -275,7 +303,7 @@ namespace Squirrel
 			}
 		}
 
-		private void RangeDownload(Range readRange, int index, ParallelLoopState state, CancellationTokenSource cancellationTokenSource, string fileUrl,
+		private void RangeDownload(Range readRange, int index, ParallelLoopState state, string fileUrl,
 			FilePartInfo[] filePartsInfo, Action<int> progress)
 		{
 			string tempFilePath = "";
@@ -323,17 +351,24 @@ namespace Squirrel
 							while (true)
 							{
 								Task<int> readTask = httpWebResponse.GetResponseStream().ReadAsync(buffer, 0, buffer.Length);
-								readTask.Wait(cancellationTokenSource.Token);
+
+								if (Task.WaitAny(new Task[] { readTask, Task.Delay(streamReadTimeout) }, downloadFileTokenSource.Token) == 1)
+								{
+									lastError = DownloadResult.INTERNET_LOST;
+									state.Stop();
+									this.Log().Info(String.Format("Downloading of the chunk number {0} was cancelled.", index));
+									break;
+								}
+
 								int currentBytes = readTask.Result;
 
-								if (currentBytes <= 0)
+								if (currentBytes == 0)
 								{
 									lock (filePartsInfo.SyncRoot)
 									{
 										filePartsInfo[index].Finished = true;
 									}
 
-									UpdateProgress(progress, filePartsInfo);
 									return;
 								}
 
@@ -349,13 +384,13 @@ namespace Squirrel
 
 								if (state.IsStopped)
 								{
-									return;
+									break;
 								}
 
-								if (cancellationTokenSource.Token.IsCancellationRequested)
+								if (downloadFileTokenSource.Token.IsCancellationRequested)
 								{
 									state.Stop();
-									return;
+									break;
 								}
 							}
 						}
@@ -364,11 +399,6 @@ namespace Squirrel
 				catch (OperationCanceledException ex)
 				{
 					this.Log().WarnException(String.Format("Downloading of the chunk number {0} was cancelled.", index), ex);
-
-					if (state.IsStopped)
-					{
-						return;
-					}
 				}
 				catch (Exception ex)
 				{
@@ -385,10 +415,16 @@ namespace Squirrel
 				{
 					return;
 				}
+
+				if (downloadFileTokenSource.Token.IsCancellationRequested)
+				{
+					state.Stop();
+					return;
+				}
 			}
 
 			// This chunk cannot be downloaded, discard the whole file downloading.
-			cancellationTokenSource.Cancel();
+			downloadFileTokenSource.Cancel();
 
 			if (lastError == DownloadResult.OK)
 			{

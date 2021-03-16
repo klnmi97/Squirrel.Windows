@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project>
   <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
 
@@ -30,7 +30,7 @@
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
     <PostBuildEvent>
       cd "$(TargetDir)"
-      "$(NuGetPackageRoot)ilrepack\1.26.0\tools\ILRepack.exe" /internalize /out:$(TargetFileName).tmp $(TargetFileName) SharpCompress.dll Microsoft.Web.XmlTransform.dll Squirrel.dll Octokit.dll NuGet.Squirrel.dll
+      "$(NuGetPackageRoot)ilrepack\1.26.0\tools\ILRepack.exe" /internalize /out:$(TargetFileName).tmp $(TargetFileName) DotNetZip.dll Microsoft.Web.XmlTransform.dll Squirrel.dll Octokit.dll NuGet.Squirrel.dll
       del "$(TargetFileName)"
       ren "$(TargetFileName).tmp" "$(TargetFileName)"
     </PostBuildEvent>

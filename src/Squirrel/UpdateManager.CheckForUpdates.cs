@@ -70,13 +70,14 @@ namespace Squirrel
                     try {
                         var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), "RELEASES");
 
-                        if (latestLocalRelease != null) {
+                        // Not working with custom queries
+                        /*if (latestLocalRelease != null) {
                             uri = Utility.AddQueryParamsToUri(uri, new Dictionary<string, string> {
                                 { "id", latestLocalRelease.PackageName },
                                 { "localVersion", latestLocalRelease.Version.ToString() },
                                 { "arch", Environment.Is64BitOperatingSystem ? "amd64" : "x86" }
                             });
-                        }
+                        }*/
 
                         var data = await urlDownloader.DownloadUrl(uri.ToString());
                         releaseFile = Encoding.UTF8.GetString(data);

@@ -13,8 +13,7 @@ using MarkdownSharp;
 using NuGet;
 using Squirrel.SimpleSplat;
 using System.Threading.Tasks;
-using SharpCompress.Archives.Zip;
-using SharpCompress.Readers;
+using Ionic.Zip;
 
 namespace Squirrel
 {
@@ -167,28 +166,19 @@ namespace Squirrel
 
         static Task extractZipWithEscaping(string zipFilePath, string outFolder)
         {
-            return Task.Run(() => {
-                using (var za = ZipArchive.Open(zipFilePath))
-                using (var reader = za.ExtractAllEntries()) {
-                    while (reader.MoveToNextEntry()) {
-                        var parts = reader.Entry.Key.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
-                        var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+			return Task.Run(() => {
+				Directory.CreateDirectory(outFolder);
 
-                        var fullTargetFile = Path.Combine(outFolder, decoded);
-                        var fullTargetDir = Path.GetDirectoryName(fullTargetFile);
-                        Directory.CreateDirectory(fullTargetDir);
-
-                        Utility.Retry(() => {
-                            if (reader.Entry.IsDirectory) {
-                                Directory.CreateDirectory(Path.Combine(outFolder, decoded));
-                            } else {
-                                reader.WriteEntryToFile(Path.Combine(outFolder, decoded));
-                            }
-                        }, 5);
-                    }
-                }
-            });
-        }
+				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
+					foreach (ZipEntry entry in zip.Entries.ToList()) {
+						var parts = entry.FileName.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
+						var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+						entry.FileName = decoded;
+						entry.Extract(outFolder);
+					}
+				}
+			});
+		}
 
         public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder)
         {
@@ -197,50 +187,67 @@ namespace Squirrel
 
         public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder, Action<int> progress)
         {
-            var re = new Regex(@"lib[\\\/][^\\\/]*[\\\/]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+			// Regex for the matching of "lib/[framework]/" directory.
+			var re = new Regex(@"lib[\\\/][^\\\/]*[\\\/]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
             return Task.Run(() => {
-                using (var za = ZipArchive.Open(zipFilePath))
-                using (var reader = za.ExtractAllEntries()) {
-                    var totalItems = za.Entries.Count;
+				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
+					var totalItems = zip.Entries.Count;
                     var currentItem = 0;
 
-                    while (reader.MoveToNextEntry()) {
-                        // Report progress early since we might be need to continue for non-matches
-                        currentItem++;
-                        var percentage = (currentItem * 100d) / totalItems;
-                        progress((int)percentage);
+					foreach (ZipEntry entry in zip.Entries.ToList()) {
+						string folderToExtractEntry = outFolder;
 
-                        var parts = reader.Entry.Key.Split('\\', '/');
-                        var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+						// Report progress early since we might be need to continue for non-matches
+						currentItem++;
+						var percentage = (currentItem * 100d) / totalItems;
+						progress((int)percentage);						
 
-                        if (!re.IsMatch(decoded)) continue;
-                        decoded = re.Replace(decoded, "", 1);
+						// Skip the extracting of entries which path does not contain "lib/[framework]/". 
+						if (!re.IsMatch(entry.FileName)) continue;
 
-                        var fullTargetFile = Path.Combine(outFolder, decoded);
-                        var fullTargetDir = Path.GetDirectoryName(fullTargetFile);
-                        Directory.CreateDirectory(fullTargetDir);
+						// Cut "lib/[framework]/" from the entry FileName.
+						var cutPath = re.Replace(entry.FileName, "", 1);
+
+						// Skip the extracting of "lib/[framework]/" directory.
+						if (cutPath == "") continue;						
 
                         var failureIsOkay = false;
-                        if (!reader.Entry.IsDirectory && decoded.Contains("_ExecutionStub.exe")) {
+						string exeStubPath = "";
+                        if (!entry.IsDirectory && cutPath.Contains("_ExecutionStub.exe")) {
                             // NB: On upgrade, many of these stubs will be in-use, nbd tho.
                             failureIsOkay = true;
+							folderToExtractEntry = rootPackageFolder;
+							entry.FileName = Path.GetFileName(cutPath);
 
-                            fullTargetFile = Path.Combine(
+							exeStubPath = Path.Combine(
                                 rootPackageFolder,
-                                Path.GetFileName(decoded).Replace("_ExecutionStub.exe", ".exe"));
+								entry.FileName);
 
-                            LogHost.Default.Info("Rigging execution stub for {0} to {1}", decoded, fullTargetFile);
+                            LogHost.Default.Info("Rigging execution stub for {0} to {1}", cutPath, exeStubPath);
                         }
+						else {
+							// We do not want to create "lib/[framework]/" directory in the installation folder, so use the cut entry's path.
+							entry.FileName = cutPath;
+						}
 
                         try {
+							// PO: This is really weird. Why is it here? Let's leave it here as it could have some reason...
                             Utility.Retry(() => {
-                                if (reader.Entry.IsDirectory) {
-                                    Directory.CreateDirectory(fullTargetFile);
-                                } else {
-                                    reader.WriteEntryToFile(fullTargetFile);
-                                }
-                            }, 5);
+								entry.Extract(folderToExtractEntry);
+
+								// Rename the stub exe file after extraction.
+								if (failureIsOkay) {
+									string exeFinalPath = exeStubPath.Replace("_ExecutionStub.exe", ".exe");
+
+									// Delete target file if exists, as File.Move() does not support overwrite.
+									if (File.Exists(exeFinalPath)) {
+										File.Delete(exeFinalPath);
+									}
+
+									File.Move(exeStubPath, exeFinalPath);
+								}
+							}, 5);
                         } catch (Exception e) {
                             if (!failureIsOkay) throw;
                             LogHost.Default.WarnException("Can't write execution stub, probably in use", e);

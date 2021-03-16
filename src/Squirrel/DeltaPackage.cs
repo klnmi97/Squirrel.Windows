@@ -8,13 +8,9 @@ using System.Text.RegularExpressions;
 using Squirrel.SimpleSplat;
 using DeltaCompressionDotNet.MsDelta;
 using System.ComponentModel;
-using Squirrel.Bsdiff;
-using SharpCompress.Archives;
-using SharpCompress.Archives.Zip;
-using SharpCompress.Writers;
-using SharpCompress.Common;
-using SharpCompress.Readers;
-using SharpCompress.Compressors.Deflate;
+using System.Threading.Tasks;
+using System.Threading;
+using Ionic.Zip;
 
 namespace Squirrel
 {
@@ -27,7 +23,9 @@ namespace Squirrel
     public class DeltaPackageBuilder : IEnableLogger, IDeltaPackageBuilder
     {
         readonly string localAppDirectory;
-        public DeltaPackageBuilder(string localAppDataOverride = null)
+		const int BYTES_TO_READ = sizeof(Int64);
+
+		public DeltaPackageBuilder(string localAppDataOverride = null)
         {
             this.localAppDirectory = localAppDataOverride;
         }
@@ -107,21 +105,17 @@ namespace Squirrel
 
             using (Utility.WithTempDirectory(out deltaPath, localAppDirectory))
             using (Utility.WithTempDirectory(out workingPath, localAppDirectory)) {
-                var opts = new ExtractionOptions() { ExtractFullPath = true, Overwrite = true, PreserveFileTime = true };
+				using (ZipFile zip = ZipFile.Read(deltaPackage.InputPackageFile)) {
+					zip.ExtractAll(deltaPath, ExtractExistingFileAction.OverwriteSilently);
+				}
 
-                using (var za = ZipArchive.Open(deltaPackage.InputPackageFile))
-                using (var reader = za.ExtractAllEntries()) {
-                    reader.WriteAllToDirectory(deltaPath, opts);
-                }
+				progress(25);
 
-                progress(25);
+				using (ZipFile zip = ZipFile.Read(basePackage.InputPackageFile)) {
+					zip.ExtractAll(workingPath, ExtractExistingFileAction.OverwriteSilently);
+				}
 
-                using (var za = ZipArchive.Open(basePackage.InputPackageFile))
-                using (var reader = za.ExtractAllEntries()) {
-                    reader.WriteAllToDirectory(workingPath, opts);
-                }
-
-                progress(50);
+				progress(50);
 
                 var pathsVisited = new List<string>();
 
@@ -134,9 +128,9 @@ namespace Squirrel
                     .Where(x => x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase))
                     .Where(x => !x.EndsWith(".shasum", StringComparison.InvariantCultureIgnoreCase))
                     .Where(x => !x.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase) ||
-                                !deltaPathRelativePaths.Contains(x.Replace(".diff", ".bsdiff")))
+                                !deltaPathRelativePaths.Contains(x.Replace(".diff", ".hdiffz")))
                     .ForEach(file => {
-                        pathsVisited.Add(Regex.Replace(file, @"\.(bs)?diff$", "").ToLowerInvariant());
+                        pathsVisited.Add(Regex.Replace(file, @"\.(h)?diff(z)?$", "").ToLowerInvariant());
                         applyDiffToFile(deltaPath, file, workingPath);
                     });
 
@@ -164,20 +158,23 @@ namespace Squirrel
                     });
 
                 this.Log().Info("Repacking into full package: {0}", outputFile);
-                using (var za = ZipArchive.Create())
-                using (var tgt = File.OpenWrite(outputFile)) {
-                    za.DeflateCompressionLevel = CompressionLevel.BestSpeed;
-                    za.AddAllFromDirectory(workingPath);
-                    za.SaveTo(tgt);
-                }
+				using (ZipFile zip = new ZipFile())	{
+					zip.UseZip64WhenSaving = Zip64Option.Always;
+					zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
+					zip.AddDirectory(workingPath);
+					zip.Save(outputFile);
+				}
 
-                progress(100);
+				// 7-zip speed testing
+				//Utility.CreateZipFromDirectory(outputFile, workingPath).Wait();
+
+				progress(100);
             }
 
             return new ReleasePackage(outputFile);
         }
 
-        void createDeltaForSingleFile(FileInfo targetFile, DirectoryInfo workingDirectory, Dictionary<string, string> baseFileListing)
+        async Task createDeltaForSingleFile(FileInfo targetFile, DirectoryInfo workingDirectory, Dictionary<string, string> baseFileListing)
         {
             // NB: There are three cases here that we'll handle:
             //
@@ -195,10 +192,9 @@ namespace Squirrel
                 return;
             }
 
-            var oldData = File.ReadAllBytes(baseFileListing[relativePath]);
-            var newData = File.ReadAllBytes(targetFile.FullName);
+			FileInfo oldFile = new FileInfo(baseFileListing[relativePath]);
 
-            if (bytesAreIdentical(oldData, newData)) {
+            if (filesAreEqual(oldFile, targetFile)) {
                 this.Log().Info("{0} hasn't changed, writing dummy file", relativePath);
 
                 File.Create(targetFile.FullName + ".diff").Dispose();
@@ -217,40 +213,57 @@ namespace Squirrel
                     msDelta.CreateDelta(baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".diff");
                     goto exit;
                 } catch (Exception) {
-                    this.Log().Warn("We couldn't create a delta for {0}, attempting to create bsdiff", targetFile.Name);
+                    this.Log().Warn("We couldn't create a delta for {0}, attempting to create hdiffz", targetFile.Name);
                 }
             }
             
             try {
-                using (FileStream of = File.Create(targetFile.FullName + ".bsdiff")) {
-                    BinaryPatchUtility.Create(oldData, newData, of);
+				var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hdiffz.exe"),
+										String.Format("{0} {1} {2}", baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".hdiffz"),
+										CancellationToken.None);
+				task.Wait();
 
-                    // NB: Create a dummy corrupt .diff file so that older 
-                    // versions which don't understand bsdiff will fail out
-                    // until they get upgraded, instead of seeing the missing
-                    // file and just removing it.
-                    File.WriteAllText(targetFile.FullName + ".diff", "1");
-                }
-            } catch (Exception ex) {
+				if (task.Result.Item1 != 0) {
+					this.Log().Warn(String.Format("We really couldn't create a delta for {0}", targetFile.Name));
+					Utility.DeleteFileHarder(targetFile.FullName + ".hdiffz", true);
+					Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
+					return;
+				}
+
+				// NB: Create a dummy corrupt .diff file so that older 
+				// versions which don't understand hdiffz will fail out
+				// until they get upgraded, instead of seeing the missing
+				// file and just removing it.
+				File.WriteAllText(targetFile.FullName + ".diff", "1");
+			} catch (Exception ex) {
                 this.Log().WarnException(String.Format("We really couldn't create a delta for {0}", targetFile.Name), ex);
 
-                Utility.DeleteFileHarder(targetFile.FullName + ".bsdiff", true);
+                Utility.DeleteFileHarder(targetFile.FullName + ".hdiffz", true);
                 Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
                 return;
             }
 
-        exit:
+			exit:
 
-            var rl = ReleaseEntry.GenerateFromFile(new MemoryStream(newData), targetFile.Name + ".shasum");
-            File.WriteAllText(targetFile.FullName + ".shasum", rl.EntryAsString, Encoding.UTF8);
-            targetFile.Delete();
+			try {
+				using (FileStream newFile = File.OpenRead(targetFile.FullName)) {
+					var rl = ReleaseEntry.GenerateFromFile(newFile, targetFile.Name + ".shasum");
+					File.WriteAllText(targetFile.FullName + ".shasum", rl.EntryAsString, Encoding.UTF8);					
+				}
+				targetFile.Delete();
+			}
+			catch (Exception ex) {
+				this.Log().WarnException(String.Format("We really couldn't create a delta for {0}. Error during shasum file creation.", targetFile.Name), ex);
+				Utility.DeleteFileHarder(targetFile.FullName + ".hdiffz", true);
+				Utility.DeleteFileHarder(targetFile.FullName + ".diff", true);
+				Utility.DeleteFileHarder(targetFile.FullName + ".shasum", true);
+			}
         }
-
 
         void applyDiffToFile(string deltaPath, string relativeFilePath, string workingDirectory)
         {
             var inputFile = Path.Combine(deltaPath, relativeFilePath);
-            var finalTarget = Path.Combine(workingDirectory, Regex.Replace(relativeFilePath, @"\.(bs)?diff$", ""));
+            var finalTarget = Path.Combine(workingDirectory, Regex.Replace(relativeFilePath, @"\.(h)?diff(z)?$", ""));
 
             var tempTargetFile = default(string);
             Utility.WithTempFile(out tempTargetFile, localAppDirectory);
@@ -262,14 +275,19 @@ namespace Squirrel
                     return;
                 }
 
-                 if (relativeFilePath.EndsWith(".bsdiff", StringComparison.InvariantCultureIgnoreCase)) {
-                    using (var of = File.OpenWrite(tempTargetFile))
-                    using (var inf = File.OpenRead(finalTarget)) {
-                        this.Log().Info("Applying BSDiff to {0}", relativeFilePath);
-                        BinaryPatchUtility.Apply(inf, () => File.OpenRead(inputFile), of);
-                    }
+                 if (relativeFilePath.EndsWith(".hdiffz", StringComparison.InvariantCultureIgnoreCase)) {
+					this.Log().Info("Applying HDiffz to {0}", relativeFilePath);
+					var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hpatchz.exe"),
+										String.Format("{0} {1} {2}", finalTarget, inputFile, tempTargetFile),
+										CancellationToken.None);
+					task.Wait();
 
-                    verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
+					if (task.Result.Item1 != 0) {
+						this.Log().Warn(String.Format("Cannot apply patch to {0}", finalTarget));
+						throw new Exception(String.Format("Cannot apply patch to {0}", finalTarget));
+					}
+
+					verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
                  } else if (relativeFilePath.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase)) {
                     this.Log().Info("Applying MSDiff to {0}", relativeFilePath);
                     var msDelta = new MsDeltaCompression();
@@ -297,7 +315,7 @@ namespace Squirrel
 
         void verifyPatchedFile(string relativeFilePath, string inputFile, string tempTargetFile)
         {
-            var shaFile = Regex.Replace(inputFile, @"\.(bs)?diff$", ".shasum");
+            var shaFile = Regex.Replace(inputFile, @"\.(h)?diff(z)?$", ".shasum");
             var expectedReleaseEntry = ReleaseEntry.ParseReleaseEntry(File.ReadAllText(shaFile, Encoding.UTF8));
             var actualReleaseEntry = ReleaseEntry.GenerateFromFile(tempTargetFile);
 
@@ -314,7 +332,10 @@ namespace Squirrel
             }
         }
 
-        bool bytesAreIdentical(byte[] oldData, byte[] newData)
+		/// <summary>
+		/// Compares two byte arrays if they are identical. There is a limitation of the 2GB per byte array in c sharp.
+		/// </summary>
+		bool bytesAreIdentical(byte[] oldData, byte[] newData)
         {
             if (oldData == null || newData == null) {
                 return oldData == newData;
@@ -331,5 +352,40 @@ namespace Squirrel
 
             return true;
         }
-    }
+
+		/// <summary>
+		/// Compares two files if they are identical. Source: https://stackoverflow.com/a/1359947
+		/// </summary>
+		/// <param name="first">First file for the comparison.</param>
+		/// <param name="second">Second file for the comparison.</param>
+		/// <returns>True if files are identical otherwise false.</returns>
+		bool filesAreEqual(FileInfo first, FileInfo second)
+		{
+			if (first.Length != second.Length)
+				return false;
+
+			if (string.Equals(first.FullName, second.FullName, StringComparison.OrdinalIgnoreCase))
+				return true;
+
+			int iterations = (int)Math.Ceiling((double)first.Length / BYTES_TO_READ);
+
+			using (FileStream fs1 = first.OpenRead())
+			using (FileStream fs2 = second.OpenRead())
+			{
+				byte[] one = new byte[BYTES_TO_READ];
+				byte[] two = new byte[BYTES_TO_READ];
+
+				for (int i = 0; i < iterations; i++)
+				{
+					fs1.Read(one, 0, BYTES_TO_READ);
+					fs2.Read(two, 0, BYTES_TO_READ);
+
+					if (BitConverter.ToInt64(one, 0) != BitConverter.ToInt64(two, 0))
+						return false;
+				}
+			}
+
+			return true;
+		}
+	}
 }

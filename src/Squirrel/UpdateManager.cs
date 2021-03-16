@@ -24,22 +24,24 @@ namespace Squirrel
     {
         readonly string rootAppDirectory;
         readonly string applicationName;
-        readonly IFileDownloader urlDownloader;
         readonly string updateUrlOrPath;
+		readonly int parallelDownloadLimit;
+		readonly string token;
 
         IDisposable updateLock;
 
         public UpdateManager(string urlOrPath, 
             string applicationName = null,
             string rootDirectory = null,
-            IFileDownloader urlDownloader = null)
-        {
+            string token = "",
+			int parallelDownloadLimit = 1,
+			string netCheckUrl = "http://google.com/generate_204")
+		{
             Contract.Requires(!String.IsNullOrEmpty(urlOrPath));
             Contract.Requires(!String.IsNullOrEmpty(applicationName));
 
             updateUrlOrPath = urlOrPath;
             this.applicationName = applicationName ?? UpdateManager.getApplicationName();
-            this.urlDownloader = urlDownloader ?? new FileDownloader();
 
             if (rootDirectory != null) {
                 this.rootAppDirectory = Path.Combine(rootDirectory, this.applicationName);
@@ -47,22 +49,26 @@ namespace Squirrel
             }
 
             this.rootAppDirectory = Path.Combine(rootDirectory ?? GetLocalAppDataDirectory(), this.applicationName);
-        }
+
+			this.token = token;
+			this.parallelDownloadLimit = parallelDownloadLimit;
+			DownloadManager.Instance.NetCheckUrl = netCheckUrl;
+		}
 
         public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update)
         {
             var checkForUpdate = new CheckForUpdateImpl(rootAppDirectory);
 
             await acquireUpdateLock();
-            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, ignoreDeltaUpdates, progress, urlDownloader);
+            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, ignoreDeltaUpdates, progress);
         }
 
         public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)
         {
-            var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
+			var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
             await acquireUpdateLock();
 
-            await downloadReleases.DownloadReleases(updateUrlOrPath, releasesToDownload, progress, urlDownloader);
+			await downloadReleases.DownloadReleases(updateUrlOrPath, token, releasesToDownload, parallelDownloadLimit, progress);
         }
 
         public async Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null)

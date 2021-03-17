@@ -25,18 +25,18 @@ namespace Squirrel
         readonly string rootAppDirectory;
         readonly string applicationName;
         readonly string updateUrlOrPath;
-		readonly int parallelDownloadLimit;
-		readonly string token;
+        readonly int parallelDownloadLimit;
+        readonly string token;
 
         IDisposable updateLock;
 
-        public UpdateManager(string urlOrPath, 
+        public UpdateManager(string urlOrPath,
             string applicationName = null,
             string rootDirectory = null,
             string token = "",
-			int parallelDownloadLimit = 1,
-			string netCheckUrl = "http://google.com/generate_204")
-		{
+            int parallelDownloadLimit = 1,
+            string netCheckUrl = "http://google.com/generate_204")
+        {
             Contract.Requires(!String.IsNullOrEmpty(urlOrPath));
             Contract.Requires(!String.IsNullOrEmpty(applicationName));
 
@@ -50,10 +50,10 @@ namespace Squirrel
 
             this.rootAppDirectory = Path.Combine(rootDirectory ?? GetLocalAppDataDirectory(), this.applicationName);
 
-			this.token = token;
-			this.parallelDownloadLimit = parallelDownloadLimit;
-			DownloadManager.Instance.NetCheckUrl = netCheckUrl;
-		}
+            this.token = token;
+            this.parallelDownloadLimit = parallelDownloadLimit;
+            DownloadManager.Instance.NetCheckUrl = netCheckUrl;
+        }
 
         public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update)
         {
@@ -65,10 +65,10 @@ namespace Squirrel
 
         public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)
         {
-			var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
+            var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
             await acquireUpdateLock();
 
-			await downloadReleases.DownloadReleases(updateUrlOrPath, token, releasesToDownload, parallelDownloadLimit, progress);
+            await downloadReleases.DownloadReleases(updateUrlOrPath, token, releasesToDownload, parallelDownloadLimit, progress);
         }
 
         public async Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null)

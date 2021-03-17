@@ -26,14 +26,14 @@ namespace Squirrel
             public string HtmlUrl { get; set; }
         }
 
-		public static async Task<UpdateManager> GitHubUpdateManager(
-			string repoUrl,
-			int parallelDownloadLimit,
+        public static async Task<UpdateManager> GitHubUpdateManager(
+            string repoUrl,
+            int parallelDownloadLimit,
             string applicationName = null,
             string rootDirectory = null,
             bool prerelease = false,
             string accessToken = null,
-			string updateToken = "")
+            string updateToken = "")
         {
             var repoUri = new Uri(repoUrl);
             var userAgent = new ProductInfoHeaderValue("Squirrel", Assembly.GetExecutingAssembly().GetName().Version.ToString());

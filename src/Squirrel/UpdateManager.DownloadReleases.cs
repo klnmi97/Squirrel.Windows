@@ -20,43 +20,46 @@ namespace Squirrel
 
             public async Task DownloadReleases(string updateUrlOrPath, string token, IEnumerable<ReleaseEntry> releasesToDownload, int parallelDownloadLimit, Action<int> progress = null)
             {
-				progress = progress ?? (_ => { });
+                progress = progress ?? (_ => { });
                 var packagesDirectory = Path.Combine(rootAppDirectory, "packages");
 
                 double current = 0;
                 double toIncrement = 100.0 / releasesToDownload.Count();
 
-				if (Utility.IsHttpUrl(updateUrlOrPath)) {
-					// From Internet
-					/*await releasesToDownload.ForEachAsync(async x => {
-						var targetFile = Path.Combine(packagesDirectory, x.Filename);
-						double component = 0;
-						await downloadRelease(updateUrlOrPath, x, urlDownloader, targetFile, p => {
-							lock (progress) {
-								current -= component;
-								component = toIncrement / 100.0 * p;
-								progress((int)Math.Round(current += component));
-							}
-						});
+                if (Utility.IsHttpUrl(updateUrlOrPath)) {
+                    // From Internet
+                    /*await releasesToDownload.ForEachAsync(async x => {
+                        var targetFile = Path.Combine(packagesDirectory, x.Filename);
+                        double component = 0;
+                        await downloadRelease(updateUrlOrPath, x, urlDownloader, targetFile, p => {
+                            lock (progress) {
+                                current -= component;
+                                component = toIncrement / 100.0 * p;
+                                progress((int)Math.Round(current += component));
+                            }
+                        });
 
-						checksumPackage(x);
-					});*/
+                        checksumPackage(x);
+                    });*/
 
-					releasesToDownload.ForEach(x => {
-						var targetFile = Path.Combine(packagesDirectory, x.Filename);
-						double component = 0;
-						downloadRelease(updateUrlOrPath, token, x, targetFile, parallelDownloadLimit, p => {
-							lock (progress)
-							{
-								current -= component;
-								component = toIncrement / 100.0 * p;
-								progress((int)Math.Round(current += component));
-							}
-						});
+                    releasesToDownload.ForEach(x =>
+                    {
+                        var targetFile = Path.Combine(packagesDirectory, x.Filename);
+                        double component = 0;
+                        downloadRelease(updateUrlOrPath, token, x, targetFile, parallelDownloadLimit, p =>
+                        {
+                            lock (progress)
+                            {
+                                current -= component;
+                                component = toIncrement / 100.0 * p;
+                                progress((int)Math.Round(current += component));
+                            }
+                        });
 
-						checksumPackage(x);
-					});
-				} else {
+                        checksumPackage(x);
+                    });
+                }
+                else {
                     // From Disk
                     await releasesToDownload.ForEachAsync(x => {
                         var targetFile = Path.Combine(packagesDirectory, x.Filename);
@@ -86,17 +89,17 @@ namespace Squirrel
                 if (!String.IsNullOrEmpty(releaseEntry.Query)) {
                     releaseEntryUrl += releaseEntry.Query + "&" + token.Substring(1);
                 }
-				else {
-					releaseEntryUrl += token;
-				}
+                else {
+                    releaseEntryUrl += token;
+                }
 
                 var sourceFileUrl = new Uri(baseUri, releaseEntryUrl).AbsoluteUri;
                 File.Delete(targetFile);
 
-				if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress))
-				{
-					throw new Exception("An error occured during the update download.");
-				}
+                if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress))
+                {
+                    throw new Exception("An error occured during the update download.");
+                }
             }
 
             Task checksumAllPackages(IEnumerable<ReleaseEntry> releasesDownloaded)

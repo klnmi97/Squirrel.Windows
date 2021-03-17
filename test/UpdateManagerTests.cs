@@ -172,7 +172,7 @@ namespace Squirrel.Tests
                     // check for an update
                     UpdateInfo updateInfo;
 
-					// PO: TODO fix fake downloader test
+                    // PO: TODO fix fake downloader test
                     using (var mgr = new UpdateManager(remotePackages, "theApp", tempDir, "")) {
                         updateInfo = await mgr.CheckForUpdate();
                     }
@@ -219,8 +219,8 @@ namespace Squirrel.Tests
 
                     UpdateInfo updateInfo;
 
-					// PO: TODO fix fake downloader test
-					using (var mgr = new UpdateManager(remotePackages, "theApp", tempDir, "")) {
+                    // PO: TODO fix fake downloader test
+                    using (var mgr = new UpdateManager(remotePackages, "theApp", tempDir, "")) {
                         updateInfo = await mgr.CheckForUpdate();
                     }
 

@@ -24,7 +24,7 @@ namespace Squirrel
                 UpdaterIntention intention,
                 string localReleaseFile,
                 string updateUrlOrPath,
-				string token,
+                string token,
                 bool ignoreDeltaUpdates = false,
                 Action<int> progress = null)
             {
@@ -65,8 +65,8 @@ namespace Squirrel
                     
                     var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), "RELEASES");
 
-					// Not working with custom queries
-					/*if (latestLocalRelease != null) {
+                    // Not working with custom queries
+                    /*if (latestLocalRelease != null) {
                         uri = Utility.AddQueryParamsToUri(uri, new Dictionary<string, string> {
                             { "id", latestLocalRelease.PackageName },
                             { "localVersion", latestLocalRelease.Version.ToString() },
@@ -74,14 +74,14 @@ namespace Squirrel
                         });
                     }*/
 
-					string tempFilePath = Path.GetTempFileName();
-					if (!DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress))
-					{
-						File.Delete(tempFilePath);
-						throw new Exception("An error occured during the update download.");
-					}
-					var data = File.ReadAllBytes(tempFilePath);
-					File.Delete(tempFilePath);
+                    string tempFilePath = Path.GetTempFileName();
+                    if (!DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress))
+                    {
+                        File.Delete(tempFilePath);
+                        throw new Exception("An error occured during the update download.");
+                    }
+                    var data = File.ReadAllBytes(tempFilePath);
+                    File.Delete(tempFilePath);
 
                     releaseFile = Encoding.UTF8.GetString(data);
                     progress(33);

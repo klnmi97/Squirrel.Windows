@@ -65,7 +65,8 @@ namespace Squirrel
                     
                     var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), "RELEASES");
 
-                    // Not working with custom queries
+                    // PO: The update server does not expect these params, so we do not want to add these params
+                    //     when calling our update server. We need to add authentication SAS token only.
                     /*if (latestLocalRelease != null) {
                         uri = Utility.AddQueryParamsToUri(uri, new Dictionary<string, string> {
                             { "id", latestLocalRelease.PackageName },

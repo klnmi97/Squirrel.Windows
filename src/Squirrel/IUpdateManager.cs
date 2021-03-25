@@ -167,8 +167,11 @@ namespace Squirrel
                 await This.ErrorIfThrows(() => 
                     This.CreateUninstallerRegistryEntry(),
                     "Failed to set up uninstaller");
-            } catch {
-                if (ignoreDeltaUpdates == false) {
+            } catch (IOException ex) when ((ex.HResult & 0xFFFF) == 0x27 || (ex.HResult & 0xFFFF) == 0x70) {
+                    throw ex; // Rethrow not enough space exception.
+            } catch (Exception) {
+                if (ignoreDeltaUpdates == false)
+                {
                     ignoreDeltaUpdates = true;
                     goto retry;
                 }

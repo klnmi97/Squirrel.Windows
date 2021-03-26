@@ -168,7 +168,10 @@ namespace Squirrel
                     This.CreateUninstallerRegistryEntry(),
                     "Failed to set up uninstaller");
             } catch (IOException ex) when ((ex.HResult & 0xFFFF) == 0x27 || (ex.HResult & 0xFFFF) == 0x70) {
-                    throw ex; // Rethrow not enough space exception.
+                // 0x27 (ERROR_HANDLE_DISK_FULL) and 0x70 (ERROR_DISK_FULL) are standard Win32 error codes.
+                // See doc: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/18d8fbe8-a967-4f1c-ae50-99ca8e491d2d
+                // Rethrow not enough space exception.
+                throw ex; 
             } catch (Exception) {
                 if (ignoreDeltaUpdates == false)
                 {

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -36,7 +37,8 @@ namespace Squirrel
         {
             OK,
             INTERNET_LOST,
-            CONNECTION_EXCEPTION
+            CONNECTION_EXCEPTION,
+            NOT_ENOUGH_SPACE
         }
 
         /// <summary>
@@ -85,7 +87,7 @@ namespace Squirrel
             ServicePointManager.MaxServicePointIdleTime = 1000;
         }
 
-        public bool DownloadFile(string fileUrl, string destinationFilePath, int numberOfParallelDownloads, Action<int> progress, bool validateSSL = false)
+        public void DownloadFile(string fileUrl, string destinationFilePath, int numberOfParallelDownloads, Action<int> progress, bool validateSSL = false)
         {
             CancellationTokenSource netCheckerTokenSource = new CancellationTokenSource();
             downloadFileTokenSource = new CancellationTokenSource();
@@ -103,7 +105,7 @@ namespace Squirrel
 
             if ((fileSize = GetDownloadedFileSize(fileUrl)) == 0)
             {
-                return false;
+                ThrowException();
             }
 
             // Handle number of parallel downloads.
@@ -133,7 +135,7 @@ namespace Squirrel
                     }
                 }
 
-                if (lastError == DownloadResult.CONNECTION_EXCEPTION)
+                if (lastError == DownloadResult.CONNECTION_EXCEPTION || lastError == DownloadResult.NOT_ENOUGH_SPACE)
                 {
                     break;
                 }
@@ -154,10 +156,8 @@ namespace Squirrel
 
             if (!downloadExitCode)
             {
-                return false;
+                ThrowException();
             }
-
-            return true;
         }
 
         private Task CreateNetCheckerTask(CancellationTokenSource netCheckerTokenSource)
@@ -225,6 +225,7 @@ namespace Squirrel
                 }
                 catch (Exception ex)
                 {
+                    lastError = DownloadResult.CONNECTION_EXCEPTION;
                     this.Log().WarnException(String.Format("Couldn't get HEAD with file size."), ex);
                     System.Threading.Thread.Sleep(5000);
                 }
@@ -404,6 +405,15 @@ namespace Squirrel
                 {
                     this.Log().WarnException(String.Format("Downloading of the chunk number {0} was cancelled.", index), ex);
                 }
+                catch (IOException ex) when ((ex.HResult & 0xFFFF) == 0x27 || (ex.HResult & 0xFFFF) == 0x70)
+                {
+                    // 0x27 (ERROR_HANDLE_DISK_FULL) and 0x70 (ERROR_DISK_FULL) are standard Win32 error codes.
+                    // See doc: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/18d8fbe8-a967-4f1c-ae50-99ca8e491d2d
+                    this.Log().WarnException(String.Format("Couldn't download file chunk number {0}. Not enough space.", index), ex);
+                    lastError = DownloadResult.NOT_ENOUGH_SPACE;
+                    state.Stop();
+                    return;
+                }
                 catch (Exception ex)
                 {
                     this.Log().WarnException(String.Format("Couldn't download file chunk number {0}.", index), ex);
@@ -466,6 +476,29 @@ namespace Squirrel
             lock (filePartsInfo.SyncRoot)
             {
                 progress(filePartsInfo.Sum(x => x.Progress) / filePartsInfo.Length);
+            }
+        }
+
+        private void ThrowException()
+        {
+            if (lastError == DownloadResult.CONNECTION_EXCEPTION || lastError == DownloadResult.INTERNET_LOST)
+            {
+                throw new Exception("Connection exception.");
+            }
+            else if (lastError == DownloadResult.NOT_ENOUGH_SPACE)
+            {
+                // Throw error with code ERROR_HANDLE_DISK_FULL.
+                throw new ExternalException("Not enough space.", unchecked((int)0x80070027));
+            }
+            else if (lastError == DownloadResult.OK)
+            {
+                this.Log().Warn("We should not get here. Download failed but last error is ok.");
+                throw new InvalidOperationException();
+            }
+            else
+            {
+                // Some DownloadResult implementation is missing.
+                throw new NotImplementedException();
             }
         }
     }

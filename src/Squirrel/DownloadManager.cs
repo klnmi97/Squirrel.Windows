@@ -36,7 +36,7 @@ namespace Squirrel
         enum DownloadResult
         {
             OK,
-            INTERNET_LOST,
+            INTERNET_CONNECTION_LOST,
             CONNECTION_EXCEPTION,
             NOT_ENOUGH_SPACE
         }
@@ -359,7 +359,7 @@ namespace Squirrel
 
                                 if (Task.WaitAny(new Task[] { readTask, Task.Delay(streamReadTimeout) }, downloadFileTokenSource.Token) == 1)
                                 {
-                                    lastError = DownloadResult.INTERNET_LOST;
+                                    lastError = DownloadResult.INTERNET_CONNECTION_LOST;
                                     state.Stop();
                                     this.Log().Info(String.Format("Downloading of the chunk number {0} was cancelled.", index));
                                     break;
@@ -466,7 +466,7 @@ namespace Squirrel
             }
             catch
             {
-                lastError = DownloadResult.INTERNET_LOST;
+                lastError = DownloadResult.INTERNET_CONNECTION_LOST;
                 return false;
             }
         }
@@ -481,7 +481,7 @@ namespace Squirrel
 
         private void ThrowException()
         {
-            if (lastError == DownloadResult.CONNECTION_EXCEPTION || lastError == DownloadResult.INTERNET_LOST)
+            if (lastError == DownloadResult.CONNECTION_EXCEPTION || lastError == DownloadResult.INTERNET_CONNECTION_LOST)
             {
                 throw new Exception("Connection exception.");
             }

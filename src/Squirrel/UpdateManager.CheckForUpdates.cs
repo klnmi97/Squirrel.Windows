@@ -76,11 +76,17 @@ namespace Squirrel
                     }*/
 
                     string tempFilePath = Path.GetTempFileName();
-                    if (!DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress))
+
+                    try
+                    {
+                        DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress);
+                    }
+                    catch(Exception ex)
                     {
                         File.Delete(tempFilePath);
-                        throw new Exception("An error occured during the update download.");
+                        throw ex;
                     }
+
                     var data = File.ReadAllBytes(tempFilePath);
                     File.Delete(tempFilePath);
 

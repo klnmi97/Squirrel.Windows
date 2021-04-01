@@ -172,6 +172,8 @@ namespace Squirrel
                 // See doc: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/18d8fbe8-a967-4f1c-ae50-99ca8e491d2d
                 // Rethrow not enough space exception.
                 throw ex; 
+            } catch (Exception ex) when (ex.Message == "Connection exception.") {
+                throw ex;
             } catch (Exception) {
                 if (ignoreDeltaUpdates == false)
                 {

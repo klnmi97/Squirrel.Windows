@@ -96,10 +96,7 @@ namespace Squirrel
                 var sourceFileUrl = new Uri(baseUri, releaseEntryUrl).AbsoluteUri;
                 File.Delete(targetFile);
 
-                if (!DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress))
-                {
-                    throw new Exception("An error occured during the update download.");
-                }
+                DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress);
             }
 
             Task checksumAllPackages(IEnumerable<ReleaseEntry> releasesDownloaded)

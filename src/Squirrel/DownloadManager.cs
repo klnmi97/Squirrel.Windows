@@ -10,6 +10,12 @@ using System.Threading.Tasks;
 
 namespace Squirrel
 {
+    /// <summary>
+    /// Download manager for parallel download of parts of a file with
+    /// connection error handling. Expects that server has partial
+    /// content support. 
+    /// Inspired by <a href="https://dejanstojanovic.net/aspnet/2018/march/download-file-in-chunks-in-parallel-in-c/">tutorial</a>.
+    /// </summary>
     public sealed class DownloadManager : IEnableLogger
     {
         /// <summary>Singleton's lock.</summary>
@@ -18,7 +24,7 @@ namespace Squirrel
         /// <summary>Singleton.</summary>
         private static DownloadManager instance = null;
 
-        /// <summary>Last error which occured during parallel parts download.</summary>
+        /// <summary>Last error which occured while downloading parts in parallel.</summary>
         private static volatile DownloadResult lastError = DownloadResult.OK;
 
         /// <summary>Below this limit (in bytes) is not possible to download file in parallel.</summary>
@@ -30,9 +36,10 @@ namespace Squirrel
         /// <summary>Timeout (in milliseconds) for the body of http response reading.</summary>
         private const int streamReadTimeout = 5 * 60 * 1000;
 
+        /// <summary>To be able to cancel file download.</summary>
         private CancellationTokenSource downloadFileTokenSource;
 
-        /// <summary> Enumeration with possible parallel download results.</summary>
+        /// <summary>Enumeration with possible parallel download results.</summary>
         enum DownloadResult
         {
             OK,
@@ -51,18 +58,18 @@ namespace Squirrel
             public long End { get; set; }
         }
 
-        /// <summary> Holds info about downloaded file part. </summary>
+        /// <summary>Holds info about downloaded file part.</summary>
         private class FilePartInfo
         {
-            /// <summary> Path to the temporary file for the downloaded part. </summary>
+            /// <summary>Path to the temporary file for the downloaded part.</summary>
             public string FilePath { get; set; }
-            /// <summary> Current progress of the downloaded part. </summary>
+            /// <summary>Current progress of the downloaded part.</summary>
             public int Progress { get; set; }
-            /// <summary> Flag which indicates if the part is successfully downloaded. </summary>
+            /// <summary>Flag which indicates if the part has been successfully downloaded.</summary>
             public bool Finished { get; set; }
         }
 
-        /// <summary> Singleton property. </summary>
+        /// <summary>Singleton property.</summary>
         public static DownloadManager Instance
         {
             get
@@ -78,6 +85,7 @@ namespace Squirrel
             }
         }
 
+        /// <summary>Check the internet connection availability against this url.</summary>
         public string NetCheckUrl { get; set; } = "http://google.com/generate_204";
 
         DownloadManager()
@@ -87,6 +95,14 @@ namespace Squirrel
             ServicePointManager.MaxServicePointIdleTime = 1000;
         }
 
+        /// <summary>
+        /// Download file in parallel with several attempts.
+        /// </summary>
+        /// <param name="fileUrl">File url.</param>
+        /// <param name="destinationFilePath">Path to save downloaded file.</param>
+        /// <param name="numberOfParallelDownloads">If set to zero <see cref="Environment.ProcessorCount"/> will be used.</param>
+        /// <param name="progress">Ui method for showing progress.</param>
+        /// <param name="validateSSL">Whether validate SSL.</param>
         public void DownloadFile(string fileUrl, string destinationFilePath, int numberOfParallelDownloads, Action<int> progress, bool validateSSL = false)
         {
             CancellationTokenSource netCheckerTokenSource = new CancellationTokenSource();
@@ -105,7 +121,7 @@ namespace Squirrel
 
             if ((fileSize = GetDownloadedFileSize(fileUrl)) == 0)
             {
-                ThrowException();
+                ThrowException(netCheckerTokenSource);
             }
 
             // Handle number of parallel downloads.
@@ -125,6 +141,7 @@ namespace Squirrel
                 filePartsInfo[i] = new FilePartInfo();
             }
 
+            // Attempts to download the file.
             for (int i = 0; i < 3; i++)
             {
                 if (CheckForInternetConnection())
@@ -135,6 +152,7 @@ namespace Squirrel
                     }
                 }
 
+                // It does not make any sense to do next attempt in the case of these errors.
                 if (lastError == DownloadResult.CONNECTION_EXCEPTION || lastError == DownloadResult.NOT_ENOUGH_SPACE)
                 {
                     break;
@@ -146,20 +164,25 @@ namespace Squirrel
 
             lock (filePartsInfo.SyncRoot)
             {
+                // Delete temporary file parts.
                 foreach (var filePart in filePartsInfo)
                 {
                     File.Delete(filePart.FilePath);
                 }
             }
 
-            netCheckerTokenSource.Cancel();
-
             if (!downloadExitCode)
             {
-                ThrowException();
+                ThrowException(netCheckerTokenSource);
             }
+
+            netCheckerTokenSource.Cancel();
         }
 
+        /// <summary>
+        /// Create net checker task which checks internet connection availability against <cref="NetCheckUrl"/>.
+        /// </summary>
+        /// <returns>Created task.</returns>
         private Task CreateNetCheckerTask(CancellationTokenSource netCheckerTokenSource)
         {
             return Task.Factory.StartNew(o =>
@@ -199,6 +222,11 @@ namespace Squirrel
             }, TaskCreationOptions.LongRunning, netCheckerTokenSource.Token);
         }
 
+        /// <summary>
+        /// Get downloaded file size.
+        /// </summary>
+        /// <param name="fileUrl">Url of the file.</param>
+        /// <returns>File size, zero if fails.</returns>
         private long GetDownloadedFileSize(string fileUrl)
         {
             long responseLength = 0;
@@ -234,6 +262,16 @@ namespace Squirrel
             return responseLength;
         }
 
+        /// <summary>
+        /// Downloads file in parallel.
+        /// </summary>
+        /// <param name="fileUrl">Url of the file.</param>
+        /// <param name="fileSize">Size of the file.</param>
+        /// <param name="destinationFilePath">Path to save downloaded file.</param>
+        /// <param name="filePartsInfo">Array with file part metadata.</param>
+        /// <param name="progress">Ui method for showing progress.</param>
+        /// <param name="numberOfParallelDownloads">Number of parallel downloads.</param>
+        /// <returns>True if succeeds, otherwise false.</returns>
         private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath,
             FilePartInfo[] filePartsInfo, Action<int> progress, int numberOfParallelDownloads = 0)
         {
@@ -282,7 +320,7 @@ namespace Squirrel
 
                 lock (filePartsInfo.SyncRoot)
                 {
-                    // Check all chunks if they were downloaded successfuly.
+                    // Check all chunks if they were downloaded successfully.
                     foreach (var filePart in filePartsInfo)
                     {
                         if (!filePart.Finished)
@@ -307,11 +345,21 @@ namespace Squirrel
             }
         }
 
-        private void RangeDownload(Range readRange, int index, ParallelLoopState state, string fileUrl,
+        /// <summary>
+        /// Downloads specified byte range of the file.
+        /// </summary>
+        /// <param name="range">Range to download.</param>
+        /// <param name="index">Index in the parallel for loop.</param>
+        /// <param name="state">State of the parallel for loop.</param>
+        /// <param name="fileUrl">Url of the file.</param>
+        /// <param name="filePartsInfo">Array with file part metadata.</param>
+        /// <param name="progress">Ui method for showing progress.</param>
+        private void RangeDownload(Range range, int index, ParallelLoopState state, string fileUrl,
             FilePartInfo[] filePartsInfo, Action<int> progress)
         {
             string tempFilePath = "";
 
+            // Attempts to download file part.
             for (int i = 0; i < 3; i++)
             {
                 try
@@ -333,12 +381,13 @@ namespace Squirrel
                         }
                         else
                         {
+                            // Temporary file for the downloaded part does not exist, create a new one.
                             tempFilePath = Path.GetTempFileName();
                             filePartsInfo[index].FilePath = tempFilePath;
                         }
                     }
 
-                    httpWebRequest.AddRange(readRange.Start, readRange.End);
+                    httpWebRequest.AddRange(range.Start, range.End);
 
                     using (HttpWebResponse httpWebResponse = httpWebRequest.GetResponse() as HttpWebResponse)
                     {
@@ -355,6 +404,8 @@ namespace Squirrel
 
                             while (true)
                             {
+                                // ReadAsync function can hangs in the case of internet connection problems because timeout for the stream does
+                                // not work. The workaround is to substitute this timeout with Task.Delay.
                                 Task<int> readTask = httpWebResponse.GetResponseStream().ReadAsync(buffer, 0, buffer.Length);
 
                                 if (Task.WaitAny(new Task[] { readTask, Task.Delay(streamReadTimeout) }, downloadFileTokenSource.Token) == 1)
@@ -382,7 +433,7 @@ namespace Squirrel
 
                                 lock (filePartsInfo.SyncRoot)
                                 {
-                                    filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (readRange.End - readRange.Start));
+                                    filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (range.End - range.Start));
                                 }
 
                                 UpdateProgress(progress, filePartsInfo);
@@ -446,13 +497,10 @@ namespace Squirrel
             }
         }
 
-        private long GetExistingFileLength(string filename)
-        {
-            if (!File.Exists(filename)) return 0;
-            FileInfo info = new FileInfo(filename);
-            return info.Length;
-        }
-
+        /// <summary>
+        /// Checks if the internet connection is alive.
+        /// </summary>
+        /// <returns>True if succeeds, otherwise false.</returns>
         private bool CheckForInternetConnection()
         {
             try
@@ -471,6 +519,11 @@ namespace Squirrel
             }
         }
 
+        /// <summary>
+        /// Updates progress of the downloaded file.
+        /// </summary>
+        /// <param name="progress">Ui method for showing progress.</param>
+        /// <param name="filePartsInfo">Array with file part metadata.</param>
         private void UpdateProgress(Action<int> progress, FilePartInfo[] filePartsInfo)
         {
             lock (filePartsInfo.SyncRoot)
@@ -479,8 +532,13 @@ namespace Squirrel
             }
         }
 
-        private void ThrowException()
+        /// <summary>
+        /// Throws exception based on the last error.
+        /// </summary>
+        private void ThrowException(CancellationTokenSource netCheckerTokenSource)
         {
+            netCheckerTokenSource.Cancel();
+
             if (lastError == DownloadResult.CONNECTION_EXCEPTION || lastError == DownloadResult.INTERNET_CONNECTION_LOST)
             {
                 throw new Exception("Connection exception.");

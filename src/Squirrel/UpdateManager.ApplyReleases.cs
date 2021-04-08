@@ -27,12 +27,15 @@ namespace Squirrel
                 this.rootAppDirectory = rootAppDirectory;
             }
 
-            public async Task<string> ApplyReleases(UpdateInfo updateInfo, bool silentInstall, bool attemptingFullInstall, Action<int> progress = null)
+            public async Task<string> ApplyReleases(UpdateInfo updateInfo, bool silentInstall, bool attemptingFullInstall, 
+                Action<int> progress = null, Action<string> status = null)
             {
                 progress = progress ?? (_ => { });
+                status = status ?? (_ => { });
 
                 progress(0);
-
+                status("Applying delta updates");
+                
                 // Progress range: 00 -> 40
                 var release = await createFullPackagesFromDeltas(updateInfo.ReleasesToApply, updateInfo.CurrentlyInstalledVersion, new ApplyReleasesProgress(updateInfo.ReleasesToApply.Count, x => progress(CalculateProgress(x, 0, 40))));
 
@@ -48,6 +51,7 @@ namespace Squirrel
                     return getDirectoryForRelease(updateInfo.CurrentlyInstalledVersion.Version).FullName;
                 }
 
+                status("Installing the newest version");
                 // Progress range: 40 -> 80
                 var ret = await this.ErrorIfThrows(() => installPackageToAppDir(updateInfo, release, x => progress(CalculateProgress(x, 40, 80))), 
                     "Failed to install package to app dir");
@@ -81,6 +85,7 @@ namespace Squirrel
                 var appDir = new DirectoryInfo(Utility.AppDirForRelease(rootAppDirectory, updateInfo.FutureReleaseEntry));
                 var allExes = appDir.GetFiles("*.exe").Select(x => x.Name).ToList();
 
+                status("Removing old files");
                 this.ErrorIfThrows(() => trayFixer.RemoveDeadEntries(allExes, rootAppDirectory, updateInfo.FutureReleaseEntry.Version.ToString()));
 
                 progress(97);
@@ -99,6 +104,7 @@ namespace Squirrel
                 }
 
                 progress(100);
+                status("Applying releases finished");
 
                 return ret;
             }

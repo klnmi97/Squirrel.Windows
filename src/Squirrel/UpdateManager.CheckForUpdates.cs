@@ -26,9 +26,13 @@ namespace Squirrel
                 string updateUrlOrPath,
                 string token,
                 bool ignoreDeltaUpdates = false,
-                Action<int> progress = null)
+                Action<int> progress = null,
+                Action<string> status = null)
             {
                 progress = progress ?? (_ => { });
+                status = status ?? (_ => { });
+
+                status("Checking for updates");
 
                 var localReleases = Enumerable.Empty<ReleaseEntry>();
                 var stagingId = intention == UpdaterIntention.Install ? null : getOrCreateStagedUserId();
@@ -79,11 +83,12 @@ namespace Squirrel
 
                     try
                     {
-                        DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress);
+                        DownloadManager.Instance.DownloadFile(uri.ToString() + token, tempFilePath, 1, progress, x => { });
                     }
                     catch(Exception ex)
                     {
                         File.Delete(tempFilePath);
+                        status("Checking for updates failed");
                         throw ex;
                     }
 
@@ -100,6 +105,7 @@ namespace Squirrel
                             "The directory {0} does not exist, something is probably broken with your application",
                             updateUrlOrPath);
 
+                        status("Checking for updates failed");
                         throw new Exception(message);
                     }
 
@@ -130,6 +136,7 @@ namespace Squirrel
                 progress(66);
 
                 if (!remoteReleases.Any()) {
+                    status("Remote release File is empty or corrupted");
                     throw new Exception("Remote release File is empty or corrupted");
                 }
 

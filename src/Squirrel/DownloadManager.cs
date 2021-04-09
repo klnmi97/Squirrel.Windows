@@ -37,10 +37,10 @@ namespace Squirrel
         private const int streamReadTimeout = 5 * 60 * 1000;
 
         /// <summary>Number of bytes in one megabyte. Is used for conversion.</summary>
-        private const int bytesInMB = 1000 * 1000;
+        private const int bytesInMB = 1024 * 1024;
 
         /// <summary>Number of bytes in one kilobyte. Is used for conversion.</summary>
-        private const int bytesInKB = 1000;
+        private const int bytesInKB = 1024;
 
         /// <summary>To be able to cancel file download.</summary>
         private CancellationTokenSource downloadFileTokenSource;

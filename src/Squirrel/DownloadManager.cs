@@ -36,6 +36,12 @@ namespace Squirrel
         /// <summary>Timeout (in milliseconds) for the body of http response reading.</summary>
         private const int streamReadTimeout = 5 * 60 * 1000;
 
+        /// <summary>Number of bytes in one megabyte. Is used for conversion.</summary>
+        private const int bytesInMB = 1000 * 1000;
+
+        /// <summary>Number of bytes in one kilobyte. Is used for conversion.</summary>
+        private const int bytesInKB = 1000;
+
         /// <summary>To be able to cancel file download.</summary>
         private CancellationTokenSource downloadFileTokenSource;
 
@@ -229,7 +235,7 @@ namespace Squirrel
         }
 
         /// <summary>
-        /// Create speed counter task which calculates current download speed for the whole process.
+        /// Create speed counter task which calculates current download using information from FilePartInfo.
         /// </summary>
         /// <returns>Created task.</returns>
         private Task CreateDownloadSpeedCalcTask(FilePartInfo[] filePartsInfo, Action<double> speed, CancellationTokenSource speedCheckerTokenSource)
@@ -245,21 +251,23 @@ namespace Squirrel
                     {
                         break;
                     }
-                    
+                    // Sum total bytes downloaded in parallel
                     long totalBytesDownloaded = 0;
                     for(int i = 0; i < filePartsInfo.Length; i++)
                     {
                         totalBytesDownloaded += filePartsInfo[i].BytesDownloaded;
                     }
-
+                    // Number of bytes downloaded in the current cycle of while block
                     var currentBytesDownloaded = totalBytesDownloaded - bytes;
                     var now = DateTime.Now;
+                    // Current cycle duration
                     var currentCycleTime = now - startTime;
                     double currentCycleSpeed = 0;
                     startTime = DateTime.Now;
                     
                     if (currentCycleTime.TotalSeconds != 0)
                     {
+                        // Calculate speed of download
                         currentCycleSpeed = (double)currentBytesDownloaded / currentCycleTime.TotalSeconds;
                     }
                     
@@ -332,14 +340,14 @@ namespace Squirrel
 
             Action<double> downloadSpeed = x =>
             {
-                if (((int)x / 1000000) > 0)
+                if (((int)x / bytesInMB) > 0)
                 {
-                    var speedInMBs = x / 1000000;
+                    var speedInMBs = x / bytesInMB;
                     status(String.Format("Downloading: {0:F1} MB/s", speedInMBs));
                 }
-                else if (((int)x / 1000) > 0)
+                else if (((int)x / bytesInKB) > 0)
                 {
-                    var speedInKBs = x / 1000;
+                    var speedInKBs = x / bytesInKB;
                     status(String.Format("Downloading: {0:F1} KB/s", speedInKBs));
                 }
                 else

@@ -166,6 +166,7 @@ namespace Squirrel
                     This.ApplyReleases(updateInfo, x => progress(Convert.ToInt32(x * 0.45 + 55)), status),
                     "Failed to apply updates");
 
+                status("Finishing the update");
                 await This.ErrorIfThrows(() => 
                     This.CreateUninstallerRegistryEntry(),
                     "Failed to set up uninstaller");

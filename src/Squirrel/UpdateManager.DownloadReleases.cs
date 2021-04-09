@@ -23,6 +23,7 @@ namespace Squirrel
             {
                 progress = progress ?? (_ => { });
                 status = status ?? (_ => { });
+                status("Downloading updates");
 
                 var packagesDirectory = Path.Combine(rootAppDirectory, "packages");
 
@@ -58,13 +59,14 @@ namespace Squirrel
                                 progress((int)Math.Round(current += component));
                             }
                         }, status);
-
+                        status("Checking downloaded packages");
                         checksumPackage(x);
                     });
                 }
                 else {
                     // From Disk
                     await releasesToDownload.ForEachAsync(x => {
+                        status("Copying files...");
                         var targetFile = Path.Combine(packagesDirectory, x.Filename);
 
                         File.Copy(
@@ -73,7 +75,6 @@ namespace Squirrel
                             true);
 
                         lock (progress) progress((int)Math.Round(current += toIncrement));
-                        status("Copying files...");
                         checksumPackage(x);
                     });
                 }

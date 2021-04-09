@@ -115,7 +115,7 @@ namespace Squirrel
             long fileSize = 0;
             int parallelDownloads = numberOfParallelDownloads;
 
-            status("Attempting to download files...");
+            status("Attempting to download files");
 
             if (!validateSSL)
             {
@@ -146,30 +146,12 @@ namespace Squirrel
                 filePartsInfo[i] = new FilePartInfo();
             }
 
-            Action<double> downloadSpeed = x =>
-            {
-                if (((int)x / 1000000) > 0)
-                {
-                    var speedInMBs = x / 1000000;
-                    status(String.Format("Downloading: {0:F1} MB/s", speedInMBs));
-                }
-                else if (((int)x / 1000) > 0)
-                {
-                    var speedInKBs = x / 1000;
-                    status(String.Format("Downloading: {0:F1} KB/s", speedInKBs));
-                }
-                else
-                {
-                    status(String.Format("Downloading: {0} B/s", x));
-                }
-            };
-
             // Attempts to download the file.
             for (int i = 0; i < 3; i++)
             {
                 if (CheckForInternetConnection())
                 {
-                    if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, filePartsInfo, progress, downloadSpeed, parallelDownloads))
+                    if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, filePartsInfo, progress, status, parallelDownloads))
                     {
                         break;
                     }
@@ -184,7 +166,7 @@ namespace Squirrel
                 System.Threading.Thread.Sleep(30000);
                 downloadFileTokenSource = new CancellationTokenSource();
             }
-
+            status("Finishing download");
             lock (filePartsInfo.SyncRoot)
             {
                 // Delete temporary file parts.
@@ -255,7 +237,7 @@ namespace Squirrel
             return Task.Factory.StartNew(o =>
             {
                 long bytes = 0;
-                DateTime started = DateTime.Now;
+                DateTime startTime = DateTime.Now;
                 while (true)
                 {
                     
@@ -264,19 +246,25 @@ namespace Squirrel
                         break;
                     }
                     
-                    long totalBytesNow = 0;
+                    long totalBytesDownloaded = 0;
                     for(int i = 0; i < filePartsInfo.Length; i++)
                     {
-                        totalBytesNow += filePartsInfo[i].BytesDownloaded;
+                        totalBytesDownloaded += filePartsInfo[i].BytesDownloaded;
                     }
 
-                    var downloaded = totalBytesNow - bytes;
+                    var currentBytesDownloaded = totalBytesDownloaded - bytes;
                     var now = DateTime.Now;
-                    var time = now - started;
-                    started = DateTime.Now;
-                    var speedNow = (double)downloaded / time.TotalSeconds;
-                    speed(speedNow);
-                    bytes = totalBytesNow;
+                    var currentCycleTime = now - startTime;
+                    double currentCycleSpeed = 0;
+                    startTime = DateTime.Now;
+                    
+                    if (currentCycleTime.TotalSeconds != 0)
+                    {
+                        currentCycleSpeed = (double)currentBytesDownloaded / currentCycleTime.TotalSeconds;
+                    }
+                    
+                    speed(currentCycleSpeed);
+                    bytes = totalBytesDownloaded;
                     Thread.Sleep(1000);
                 }
             }, TaskCreationOptions.LongRunning, speedCheckerTokenSource.Token);
@@ -333,7 +321,7 @@ namespace Squirrel
         /// <param name="numberOfParallelDownloads">Number of parallel downloads.</param>
         /// <returns>True if succeeds, otherwise false.</returns>
         private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath,
-            FilePartInfo[] filePartsInfo, Action<int> progress, Action<double> speed, int numberOfParallelDownloads = 0)
+            FilePartInfo[] filePartsInfo, Action<int> progress, Action<string> status, int numberOfParallelDownloads = 0)
         {
             lastError = DownloadResult.OK;
 
@@ -341,6 +329,24 @@ namespace Squirrel
             {
                 File.Delete(destinationFilePath);
             }
+
+            Action<double> downloadSpeed = x =>
+            {
+                if (((int)x / 1000000) > 0)
+                {
+                    var speedInMBs = x / 1000000;
+                    status(String.Format("Downloading: {0:F1} MB/s", speedInMBs));
+                }
+                else if (((int)x / 1000) > 0)
+                {
+                    var speedInKBs = x / 1000;
+                    status(String.Format("Downloading: {0:F1} KB/s", speedInKBs));
+                }
+                else
+                {
+                    status(String.Format("Downloading: {0} B/s", x));
+                }
+            };
 
             using (FileStream destinationStream = new FileStream(destinationFilePath, FileMode.Append))
             {
@@ -369,7 +375,7 @@ namespace Squirrel
 
                 var downloadSpeedCalcCancellationToken = new CancellationTokenSource();
 
-                CreateDownloadSpeedCalcTask(filePartsInfo, speed, downloadSpeedCalcCancellationToken);
+                CreateDownloadSpeedCalcTask(filePartsInfo, downloadSpeed, downloadSpeedCalcCancellationToken);
 
                 Parallel.For(0, numberOfParallelDownloads, new ParallelOptions() { MaxDegreeOfParallelism = numberOfParallelDownloads }, (i, state) =>
                     RangeDownload(readRanges[i], i, state, fileUrl, filePartsInfo, progress)
@@ -384,7 +390,7 @@ namespace Squirrel
 
                 #endregion
 
-                speed(0);
+                status("Checking files");
                 
                 lock (filePartsInfo.SyncRoot)
                 {

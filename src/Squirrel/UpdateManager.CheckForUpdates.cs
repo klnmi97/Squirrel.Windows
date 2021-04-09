@@ -25,6 +25,7 @@ namespace Squirrel
                 string localReleaseFile,
                 string updateUrlOrPath,
                 string token,
+                int maxDeltas,
                 bool ignoreDeltaUpdates = false,
                 Action<int> progress = null)
             {
@@ -133,7 +134,7 @@ namespace Squirrel
                     throw new Exception("Remote release File is empty or corrupted");
                 }
 
-                ret = determineUpdateInfo(intention, localReleases, remoteReleases, ignoreDeltaUpdates);
+                ret = determineUpdateInfo(intention, localReleases, remoteReleases, ignoreDeltaUpdates, maxDeltas);
 
                 progress(100);
                 return ret;
@@ -150,7 +151,7 @@ namespace Squirrel
                 Directory.CreateDirectory(pkgDir);
             }
 
-            UpdateInfo determineUpdateInfo(UpdaterIntention intention, IEnumerable<ReleaseEntry> localReleases, IEnumerable<ReleaseEntry> remoteReleases, bool ignoreDeltaUpdates)
+            UpdateInfo determineUpdateInfo(UpdaterIntention intention, IEnumerable<ReleaseEntry> localReleases, IEnumerable<ReleaseEntry> remoteReleases, bool ignoreDeltaUpdates, int maxDeltas)
             {
                 var packageDirectory = Utility.PackageDirectoryForAppDir(rootAppDirectory);
                 localReleases = localReleases ?? Enumerable.Empty<ReleaseEntry>();
@@ -166,7 +167,7 @@ namespace Squirrel
                 if (latestFullRelease == currentRelease) {
                     this.Log().Info("No updates, remote and local are the same");
 
-                    var info = UpdateInfo.Create(currentRelease, new[] {latestFullRelease}, packageDirectory);
+                    var info = UpdateInfo.Create(currentRelease, new[] {latestFullRelease}, packageDirectory, maxDeltas);
                     return info;
                 }
 
@@ -181,15 +182,15 @@ namespace Squirrel
                         this.Log().Warn("No local releases found, starting from scratch");
                     }
 
-                    return UpdateInfo.Create(null, new[] {latestFullRelease}, packageDirectory);
+                    return UpdateInfo.Create(null, new[] {latestFullRelease}, packageDirectory, maxDeltas);
                 }
 
                 if (localReleases.Max(x => x.Version) > remoteReleases.Max(x => x.Version)) {
                     this.Log().Warn("hwhat, local version is greater than remote version");
-                    return UpdateInfo.Create(Utility.FindCurrentVersion(localReleases), new[] {latestFullRelease}, packageDirectory);
+                    return UpdateInfo.Create(Utility.FindCurrentVersion(localReleases), new[] {latestFullRelease}, packageDirectory, maxDeltas);
                 }
 
-                return UpdateInfo.Create(currentRelease, remoteReleases, packageDirectory);
+                return UpdateInfo.Create(currentRelease, remoteReleases, packageDirectory, maxDeltas);
             }
 
             internal Guid? getOrCreateStagedUserId()

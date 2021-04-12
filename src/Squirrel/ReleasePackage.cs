@@ -138,7 +138,7 @@ namespace Squirrel
             using (Utility.WithTempDirectory(out tempPath, null)) {
                 var tempDir = new DirectoryInfo(tempPath);
 
-                extractZipWithEscaping(InputPackageFile, tempPath).Wait();
+                extractZipWithEscaping(InputPackageFile, tempPath, x => { }).Wait();
 
                 this.Log().Info("Extracting dependent packages: [{0}]", String.Join(",", dependencies.Select(x => x.Id)));
                 extractDependentPackages(dependencies, tempDir, targetFramework);
@@ -164,21 +164,28 @@ namespace Squirrel
             }
         }
 
-        static Task extractZipWithEscaping(string zipFilePath, string outFolder)
+        public static Task extractZipWithEscaping(string zipFilePath, string outFolder, Action<int> progress)
         {
-			return Task.Run(() => {
-				Directory.CreateDirectory(outFolder);
+            return Task.Run(() => {
+                Directory.CreateDirectory(outFolder);
 
-				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
-					foreach (ZipEntry entry in zip.Entries.ToList()) {
-						var parts = entry.FileName.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
-						var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
-						entry.FileName = decoded;
-						entry.Extract(outFolder);
-					}
-				}
-			});
-		}
+                using (ZipFile zip = ZipFile.Read(zipFilePath)) {
+                    var totalItems = zip.Entries.Count;
+                    var currentItem = 1;
+
+                    foreach (ZipEntry entry in zip.Entries.ToList()) {
+                        var parts = entry.FileName.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
+                        var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+                        entry.FileName = decoded;
+                        entry.Extract(outFolder);
+
+                        var percentage = (currentItem * 100d) / totalItems;
+                        progress((int)percentage);
+                        currentItem++;
+                    }
+                }
+            });
+        }
 
         public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder)
         {

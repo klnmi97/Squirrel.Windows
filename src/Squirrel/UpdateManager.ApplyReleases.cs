@@ -13,6 +13,7 @@ using Squirrel.SimpleSplat;
 using System.Threading;
 using Squirrel.Shell;
 using Microsoft.Win32;
+using Ionic.Zip;
 
 namespace Squirrel
 {
@@ -309,14 +310,60 @@ namespace Squirrel
                     target.Create();
 
                     this.Log().Info("Writing files to app directory: {0}", target.FullName);
-                    await ReleasePackage.ExtractZipForInstall(
-                        Path.Combine(updateInfo.PackageDirectory, release.Filename),
-                        target.FullName,
-                        rootAppDirectory,
-                        progressCallback);
+
+                    string fullPackageDir = Path.Combine(updateInfo.PackageDirectory, release.Version.ToString());
+
+                    if (!Directory.Exists(fullPackageDir)) {
+                        string fullPackageNuget = Path.Combine(updateInfo.PackageDirectory, release.Filename);
+                        // Extract nuget in the packages directory to have it prepared for applying deltas later.
+                        ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback).Wait();
+                        File.Delete(fullPackageNuget);
+                    }
+
+                    // Find framework directory in the nuget extracted folder.
+                    string[] frameworkDirs = Directory.GetDirectories(Path.Combine(fullPackageDir, "lib"));
+
+                    if (frameworkDirs.Count() != 1) {
+                        throw new Exception("Cannot locate framework directory.");
+                    }
+
+                    DirectoryInfo targetDir = new DirectoryInfo(target.FullName);
+                    // Copies application to the target installation directory.
+                    Utility.CopyAll(new DirectoryInfo(frameworkDirs.ElementAt(0)), targetDir);
+                    FileInfo[] exeStubFiles = targetDir.GetFiles("*_ExecutionStub.exe", SearchOption.AllDirectories);
+
+                    if (exeStubFiles.IsEmpty()) {
+                        throw new Exception("Cannot locate any execution stub file.");
+                    }
+
+                    // Move and rename execution stubs to the app root directory.
+                    installExecutionStubs(exeStubFiles);
 
                     return target.FullName;
                 });
+            }
+
+            void installExecutionStubs(FileInfo[] executionStubPaths)
+            {
+                foreach (FileInfo file in executionStubPaths) {
+                    try {
+                        // PO: This is really weird. Why is it here? Let's leave it here as it could have some reason...
+                        Utility.Retry(() => {
+                            // Rename the stub exe file after extraction.
+                            string exeFinalPath = Path.Combine(rootAppDirectory, file.Name.Replace("_ExecutionStub.exe", ".exe"));
+
+                            // Delete target file if exists, as File.Move() does not support overwrite.
+                            if (File.Exists(exeFinalPath)) {
+                                File.Delete(exeFinalPath);
+                            }
+
+                            File.Move(file.FullName, exeFinalPath);
+                        }, 5);
+                    }
+                    catch (Exception e) {
+                        LogHost.Default.WarnException("Can't write execution stub, probably in use", e);
+                    }
+                }
             }
 
             async Task<ReleaseEntry> createFullPackagesFromDeltas(IEnumerable<ReleaseEntry> releasesToApply, ReleaseEntry currentVersion, ApplyReleasesProgress progress)

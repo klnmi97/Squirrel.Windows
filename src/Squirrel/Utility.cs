@@ -133,6 +133,36 @@ namespace Squirrel
             await Task.Run(() => File.Copy(from, to, true));
         }
 
+        /// <summary>
+        /// Copies the entire contents of a directory.
+        /// Source: http://msdn.microsoft.com/en-us/library/system.io.directoryinfo.aspx
+        /// </summary>
+        /// <param name="source">Source directory.</param>
+        /// <param name="target">Target directory.</param>
+        public static void CopyAll(DirectoryInfo source, DirectoryInfo target)
+        {
+            if (source.FullName.ToLower() == target.FullName.ToLower()) {
+                return;
+            }
+
+            // Check if the target directory exists, if not, create it.
+            if (Directory.Exists(target.FullName) == false) {
+                Directory.CreateDirectory(target.FullName);
+            }
+
+            // Copy each file into it's new directory.
+            foreach (FileInfo fi in source.GetFiles()) {
+                fi.CopyTo(Path.Combine(target.ToString(), fi.Name), true);
+            }
+
+            // Copy each subdirectory using recursion.
+            foreach (DirectoryInfo diSourceSubDir in source.GetDirectories()) {
+                DirectoryInfo nextTargetSubDir =
+                    target.CreateSubdirectory(diSourceSubDir.Name);
+                CopyAll(diSourceSubDir, nextTargetSubDir);
+            }
+        }
+
         public static void Retry(this Action block, int retries = 2)
         {
             Contract.Requires(retries > 0);

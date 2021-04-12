@@ -31,6 +31,16 @@ namespace Squirrel
 
         IDisposable updateLock;
 
+        /// <summary>
+        /// Initializes new instance of the <see cref="UpdateManager"/> class.
+        /// </summary>
+        /// <param name="urlOrPath">Url or path where is the releases file located.</param>
+        /// <param name="applicationName">Application name.</param>
+        /// <param name="rootDirectory">Root directory of the application.</param>
+        /// <param name="token">Token for the authentication.</param>
+        /// <param name="parallelDownloadLimit">Limits the parallelism of downloading.</param>
+        /// <param name="netCheckUrl">Url used for internet availability checking.</param>
+        /// <param name="maxDeltas">Maximum number of deltas to apply. If there are more deltas available the full package will be downloaded instead.</param>
         public UpdateManager(string urlOrPath,
             string applicationName = null,
             string rootDirectory = null,

@@ -49,7 +49,7 @@ namespace Squirrel
                 .ToDictionary(k => k.Item1, v => v.Item2);
         }
 
-        public static UpdateInfo Create(ReleaseEntry currentVersion, IEnumerable<ReleaseEntry> availableReleases, string packageDirectory)
+        public static UpdateInfo Create(ReleaseEntry currentVersion, IEnumerable<ReleaseEntry> availableReleases, string packageDirectory, int maxDeltas = int.MaxValue)
         {
             Contract.Requires(availableReleases != null);
             Contract.Requires(!String.IsNullOrEmpty(packageDirectory));
@@ -72,8 +72,9 @@ namespace Squirrel
                 .OrderBy(v => v.Version);
 
             var deltasSize = newerThanUs.Where(x => x.IsDelta).Sum(x => x.Filesize);
+            var deltasCount = newerThanUs.Where(x => x.IsDelta).Count();
 
-            return (deltasSize < latestFull.Filesize && deltasSize > 0) ? 
+            return (deltasSize < latestFull.Filesize && deltasSize > 0 && deltasCount <= maxDeltas) ? 
                 new UpdateInfo(currentVersion, newerThanUs.Where(x => x.IsDelta).ToArray(), packageDirectory) : 
                 new UpdateInfo(currentVersion, new[] { latestFull }, packageDirectory);
         }

@@ -27,15 +27,27 @@ namespace Squirrel
         readonly string updateUrlOrPath;
         readonly int parallelDownloadLimit;
         readonly string token;
+        readonly int maxDeltas;
 
         IDisposable updateLock;
 
+        /// <summary>
+        /// Initializes new instance of the <see cref="UpdateManager"/> class.
+        /// </summary>
+        /// <param name="urlOrPath">Url or path where is the releases file located.</param>
+        /// <param name="applicationName">Application name.</param>
+        /// <param name="rootDirectory">Root directory of the application.</param>
+        /// <param name="token">Token for the authentication.</param>
+        /// <param name="parallelDownloadLimit">Limits the parallelism of downloading.</param>
+        /// <param name="netCheckUrl">Url used for internet availability checking.</param>
+        /// <param name="maxDeltas">Maximum number of deltas to apply. If there are more deltas available the full package will be downloaded instead.</param>
         public UpdateManager(string urlOrPath,
             string applicationName = null,
             string rootDirectory = null,
             string token = "",
             int parallelDownloadLimit = 1,
-            string netCheckUrl = "http://google.com/generate_204")
+            string netCheckUrl = "http://google.com/generate_204",
+            int maxDeltas = int.MaxValue)
         {
             Contract.Requires(!String.IsNullOrEmpty(urlOrPath));
             Contract.Requires(!String.IsNullOrEmpty(applicationName));
@@ -53,6 +65,7 @@ namespace Squirrel
             this.token = token;
             this.parallelDownloadLimit = parallelDownloadLimit;
             DownloadManager.Instance.NetCheckUrl = netCheckUrl;
+            this.maxDeltas = maxDeltas;
         }
 
         public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update)
@@ -60,7 +73,7 @@ namespace Squirrel
             var checkForUpdate = new CheckForUpdateImpl(rootAppDirectory);
 
             await acquireUpdateLock();
-            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, ignoreDeltaUpdates, progress);
+            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, maxDeltas, ignoreDeltaUpdates, progress);
         }
 
         public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)

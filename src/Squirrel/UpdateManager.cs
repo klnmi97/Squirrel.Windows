@@ -68,7 +68,7 @@ namespace Squirrel
             this.maxDeltas = maxDeltas;
         }
 
-        public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update)
+        public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, Action<string> status = null, UpdaterIntention intention = UpdaterIntention.Update)
         {
             var checkForUpdate = new CheckForUpdateImpl(rootAppDirectory);
 
@@ -76,20 +76,20 @@ namespace Squirrel
             return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, maxDeltas, ignoreDeltaUpdates, progress);
         }
 
-        public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null)
+        public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null, Action<string> status = null)
         {
             var downloadReleases = new DownloadReleasesImpl(rootAppDirectory);
             await acquireUpdateLock();
 
-            await downloadReleases.DownloadReleases(updateUrlOrPath, token, releasesToDownload, parallelDownloadLimit, progress);
+            await downloadReleases.DownloadReleases(updateUrlOrPath, token, releasesToDownload, parallelDownloadLimit, progress, status);
         }
 
-        public async Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null)
+        public async Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null, Action<string> status = null)
         {
             var applyReleases = new ApplyReleasesImpl(rootAppDirectory);
             await acquireUpdateLock();
 
-            return await applyReleases.ApplyReleases(updateInfo, false, false, progress);
+            return await applyReleases.ApplyReleases(updateInfo, false, false, progress, status);
         }
 
         public async Task FullInstall(bool silentInstall = false, Action<int> progress = null)

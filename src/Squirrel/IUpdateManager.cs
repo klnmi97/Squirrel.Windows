@@ -43,7 +43,8 @@ namespace Squirrel
         /// will return values from 0-100 and Complete, or Throw</param>
         /// <returns>An UpdateInfo object representing the updates to install.
         /// </returns>
-        Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, UpdaterIntention intention = UpdaterIntention.Update);
+        Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, Action<string> status = null, 
+            UpdaterIntention intention = UpdaterIntention.Update);
 
         /// <summary>
         /// Download a list of releases into the local package directory.
@@ -54,7 +55,7 @@ namespace Squirrel
         /// will return values from 0-100 and Complete, or Throw</param>
         /// <returns>A completion Observable - either returns a single 
         /// Unit.Default then Complete, or Throw</returns>
-        Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null);
+        Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null, Action<string> status = null);
 
         /// <summary>
         /// Take an already downloaded set of releases and apply them, 
@@ -67,7 +68,7 @@ namespace Squirrel
         /// will return values from 0-100 and Complete, or Throw</param>
         /// <returns>The path to the installed application (i.e. the path where
         /// your package's contents ended up</returns>
-        Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null);
+        Task<string> ApplyReleases(UpdateInfo updateInfo, Action<int> progress = null, Action<string> status = null);
 
         /// <summary>
         /// Completely Installs a targeted app
@@ -142,9 +143,10 @@ namespace Squirrel
 
     public static class EasyModeMixin
     {
-        public static async Task<ReleaseEntry> UpdateApp(this IUpdateManager This, Action<int> progress = null)
+        public static async Task<ReleaseEntry> UpdateApp(this IUpdateManager This, Action<int> progress = null, Action<string> status = null)
         {
             progress = progress ?? (_ => {});
+            status = status ?? (_ => { });
             This.Log().Info("Starting automatic update");
 
             bool ignoreDeltaUpdates = false;
@@ -153,20 +155,23 @@ namespace Squirrel
             var updateInfo = default(UpdateInfo);
 
             try {
-                updateInfo = await This.ErrorIfThrows(() => This.CheckForUpdate(ignoreDeltaUpdates, x => progress(x / 10)),
+                updateInfo = await This.ErrorIfThrows(() => This.CheckForUpdate(ignoreDeltaUpdates, x => progress(x / 10), status),
                     "Failed to check for updates");
 
                 await This.ErrorIfThrows(() =>
-                    This.DownloadReleases(updateInfo.ReleasesToApply, x => progress(Convert.ToInt32(x * 0.45 + 10))),
+                    This.DownloadReleases(updateInfo.ReleasesToApply, x => progress(Convert.ToInt32(x * 0.45 + 10)), status),
                     "Failed to download updates");
 
                 await This.ErrorIfThrows(() =>
-                    This.ApplyReleases(updateInfo, x => progress(Convert.ToInt32(x * 0.45 + 55))),
+                    This.ApplyReleases(updateInfo, x => progress(Convert.ToInt32(x * 0.45 + 55)), status),
                     "Failed to apply updates");
 
+                status("Finishing the update");
                 await This.ErrorIfThrows(() => 
                     This.CreateUninstallerRegistryEntry(),
                     "Failed to set up uninstaller");
+
+                status("Update was successfully installed. Finishing...");
             } catch (IOException ex) when ((ex.HResult & 0xFFFF) == 0x27 || (ex.HResult & 0xFFFF) == 0x70) {
                 // 0x27 (ERROR_HANDLE_DISK_FULL) and 0x70 (ERROR_DISK_FULL) are standard Win32 error codes.
                 // See doc: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/18d8fbe8-a967-4f1c-ae50-99ca8e491d2d

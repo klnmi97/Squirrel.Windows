@@ -73,7 +73,7 @@ namespace Squirrel
                     "Failed to invoke post-install");
 
                 progress(95);
-                status("Preparing the update");
+                status("Removing older versions");
 
                 this.Log().Info("Starting fixPinnedExecutables");
 

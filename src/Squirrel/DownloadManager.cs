@@ -259,6 +259,12 @@ namespace Squirrel
                     }
                     // Number of bytes downloaded in the current cycle of while block
                     var currentBytesDownloaded = totalBytesDownloaded - bytes;
+                    // If number of bytes for some chunk is reseted to 0, we need to ensure that download speed is not negative.
+                    if (currentBytesDownloaded < 0)
+                    {
+                        bytes = totalBytesDownloaded;
+                        currentBytesDownloaded = 0;
+                    }
                     var now = DateTime.Now;
                     // Current cycle duration
                     var currentCycleTime = now - startTime;

@@ -1,4 +1,4 @@
-﻿using Squirrel.SimpleSplat;
+using Squirrel.SimpleSplat;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,6 +36,12 @@ namespace Squirrel
         /// <summary>Timeout (in milliseconds) for the body of http response reading.</summary>
         private const int streamReadTimeout = 5 * 60 * 1000;
 
+        /// <summary>Number of bytes in one megabyte. Is used for conversion.</summary>
+        private const int bytesInMB = 1024 * 1024;
+
+        /// <summary>Number of bytes in one kilobyte. Is used for conversion.</summary>
+        private const int bytesInKB = 1024;
+
         /// <summary>To be able to cancel file download.</summary>
         private CancellationTokenSource downloadFileTokenSource;
 
@@ -65,6 +71,8 @@ namespace Squirrel
             public string FilePath { get; set; }
             /// <summary>Current progress of the downloaded part.</summary>
             public int Progress { get; set; }
+            /// <summary>Current number of bytes already downloaded.</summary>
+            public long BytesDownloaded { get; set; }
             /// <summary>Flag which indicates if the part has been successfully downloaded.</summary>
             public bool Finished { get; set; }
         }
@@ -103,7 +111,8 @@ namespace Squirrel
         /// <param name="numberOfParallelDownloads">If set to zero <see cref="Environment.ProcessorCount"/> will be used.</param>
         /// <param name="progress">Ui method for showing progress.</param>
         /// <param name="validateSSL">Whether validate SSL.</param>
-        public void DownloadFile(string fileUrl, string destinationFilePath, int numberOfParallelDownloads, Action<int> progress, bool validateSSL = false)
+        public void DownloadFile(string fileUrl, string destinationFilePath, int numberOfParallelDownloads, Action<int> progress, 
+            Action<string> status, bool validateSSL = false)
         {
             CancellationTokenSource netCheckerTokenSource = new CancellationTokenSource();
             downloadFileTokenSource = new CancellationTokenSource();
@@ -111,6 +120,8 @@ namespace Squirrel
             FilePartInfo[] filePartsInfo;
             long fileSize = 0;
             int parallelDownloads = numberOfParallelDownloads;
+
+            status("Attempting to download files");
 
             if (!validateSSL)
             {
@@ -146,7 +157,7 @@ namespace Squirrel
             {
                 if (CheckForInternetConnection())
                 {
-                    if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, filePartsInfo, progress, parallelDownloads))
+                    if (downloadExitCode = ParallelDownload(fileUrl, fileSize, destinationFilePath, filePartsInfo, progress, status, parallelDownloads))
                     {
                         break;
                     }
@@ -161,7 +172,7 @@ namespace Squirrel
                 System.Threading.Thread.Sleep(30000);
                 downloadFileTokenSource = new CancellationTokenSource();
             }
-
+            status("Finishing download");
             lock (filePartsInfo.SyncRoot)
             {
                 // Delete temporary file parts.
@@ -177,6 +188,7 @@ namespace Squirrel
             }
 
             netCheckerTokenSource.Cancel();
+            status("Download finished");
         }
 
         /// <summary>
@@ -220,6 +232,56 @@ namespace Squirrel
                     Thread.Sleep(1000);
                 }
             }, TaskCreationOptions.LongRunning, netCheckerTokenSource.Token);
+        }
+
+        /// <summary>
+        /// Create speed counter task which calculates current download using information from FilePartInfo.
+        /// </summary>
+        /// <returns>Created task.</returns>
+        private Task CreateDownloadSpeedCalcTask(FilePartInfo[] filePartsInfo, Action<double> speed, CancellationTokenSource speedCheckerTokenSource)
+        {
+            return Task.Factory.StartNew(o =>
+            {
+                long bytes = 0;
+                DateTime startTime = DateTime.Now;
+                while (true)
+                {
+                    
+                    if (speedCheckerTokenSource.Token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    // Sum total bytes downloaded in parallel
+                    long totalBytesDownloaded = 0;
+                    for(int i = 0; i < filePartsInfo.Length; i++)
+                    {
+                        totalBytesDownloaded += filePartsInfo[i].BytesDownloaded;
+                    }
+                    // Number of bytes downloaded in the current cycle of while block
+                    var currentBytesDownloaded = totalBytesDownloaded - bytes;
+                    // If number of bytes for some chunk is reseted to 0, we need to ensure that download speed is not negative.
+                    if (currentBytesDownloaded < 0)
+                    {
+                        bytes = totalBytesDownloaded;
+                        currentBytesDownloaded = 0;
+                    }
+                    var now = DateTime.Now;
+                    // Current cycle duration
+                    var currentCycleTime = now - startTime;
+                    double currentCycleSpeed = 0;
+                    startTime = DateTime.Now;
+                    
+                    if (currentCycleTime.TotalSeconds != 0)
+                    {
+                        // Calculate speed of download
+                        currentCycleSpeed = (double)currentBytesDownloaded / currentCycleTime.TotalSeconds;
+                    }
+                    
+                    speed(currentCycleSpeed);
+                    bytes = totalBytesDownloaded;
+                    Thread.Sleep(1000);
+                }
+            }, TaskCreationOptions.LongRunning, speedCheckerTokenSource.Token);
         }
 
         /// <summary>
@@ -273,7 +335,7 @@ namespace Squirrel
         /// <param name="numberOfParallelDownloads">Number of parallel downloads.</param>
         /// <returns>True if succeeds, otherwise false.</returns>
         private bool ParallelDownload(string fileUrl, long fileSize, string destinationFilePath,
-            FilePartInfo[] filePartsInfo, Action<int> progress, int numberOfParallelDownloads = 0)
+            FilePartInfo[] filePartsInfo, Action<int> progress, Action<string> status, int numberOfParallelDownloads = 0)
         {
             lastError = DownloadResult.OK;
 
@@ -281,6 +343,24 @@ namespace Squirrel
             {
                 File.Delete(destinationFilePath);
             }
+
+            Action<double> downloadSpeed = x =>
+            {
+                if (((int)x / bytesInMB) > 0)
+                {
+                    var speedInMBs = x / bytesInMB;
+                    status(String.Format("Downloading: {0:F1} MB/s", speedInMBs));
+                }
+                else if (((int)x / bytesInKB) > 0)
+                {
+                    var speedInKBs = x / bytesInKB;
+                    status(String.Format("Downloading: {0:F1} KB/s", speedInKBs));
+                }
+                else
+                {
+                    status(String.Format("Downloading: {0} B/s", x));
+                }
+            };
 
             using (FileStream destinationStream = new FileStream(destinationFilePath, FileMode.Append))
             {
@@ -307,9 +387,15 @@ namespace Squirrel
 
                 #region Parallel download
 
+                var downloadSpeedCalcCancellationToken = new CancellationTokenSource();
+
+                CreateDownloadSpeedCalcTask(filePartsInfo, downloadSpeed, downloadSpeedCalcCancellationToken);
+
                 Parallel.For(0, numberOfParallelDownloads, new ParallelOptions() { MaxDegreeOfParallelism = numberOfParallelDownloads }, (i, state) =>
                     RangeDownload(readRanges[i], i, state, fileUrl, filePartsInfo, progress)
                 );
+
+                downloadSpeedCalcCancellationToken.Cancel();
 
                 if (downloadFileTokenSource.IsCancellationRequested)
                 {
@@ -318,6 +404,8 @@ namespace Squirrel
 
                 #endregion
 
+                status("Checking files");
+                
                 lock (filePartsInfo.SyncRoot)
                 {
                     // Check all chunks if they were downloaded successfully.
@@ -391,6 +479,7 @@ namespace Squirrel
 
                     using (HttpWebResponse httpWebResponse = httpWebRequest.GetResponse() as HttpWebResponse)
                     {
+                        // TODO: rework
                         if (httpWebResponse.StatusCode != HttpStatusCode.PartialContent)
                         {
                             System.Threading.Thread.Sleep(5000);
@@ -434,6 +523,7 @@ namespace Squirrel
                                 lock (filePartsInfo.SyncRoot)
                                 {
                                     filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (range.End - range.Start));
+                                    filePartsInfo[index].BytesDownloaded = bytesCounter;
                                 }
 
                                 UpdateProgress(progress, filePartsInfo);

@@ -18,9 +18,13 @@ namespace Squirrel
                 this.rootAppDirectory = rootAppDirectory;
             }
 
-            public async Task DownloadReleases(string updateUrlOrPath, string token, IEnumerable<ReleaseEntry> releasesToDownload, int parallelDownloadLimit, Action<int> progress = null)
+            public async Task DownloadReleases(string updateUrlOrPath, string token, IEnumerable<ReleaseEntry> releasesToDownload, int parallelDownloadLimit, 
+                Action<int> progress = null, Action<string> status = null)
             {
                 progress = progress ?? (_ => { });
+                status = status ?? (_ => { });
+                status("Downloading updates");
+
                 var packagesDirectory = Path.Combine(rootAppDirectory, "packages");
 
                 double current = 0;
@@ -54,14 +58,15 @@ namespace Squirrel
                                 component = toIncrement / 100.0 * p;
                                 progress((int)Math.Round(current += component));
                             }
-                        });
-
+                        }, status);
+                        status("Checking downloaded packages");
                         checksumPackage(x);
                     });
                 }
                 else {
                     // From Disk
                     await releasesToDownload.ForEachAsync(x => {
+                        status("Copying files...");
                         var targetFile = Path.Combine(packagesDirectory, x.Filename);
 
                         File.Copy(
@@ -81,7 +86,8 @@ namespace Squirrel
                     Uri.IsWellFormedUriString(x.BaseUrl, UriKind.Absolute);
             }
 
-            void downloadRelease(string updateBaseUrl, string token, ReleaseEntry releaseEntry, string targetFile, int parallelDownloadLimit, Action<int> progress)
+            void downloadRelease(string updateBaseUrl, string token, ReleaseEntry releaseEntry, string targetFile, int parallelDownloadLimit, 
+                Action<int> progress, Action<string> status)
             {
                 var baseUri = Utility.EnsureTrailingSlash(new Uri(updateBaseUrl));
 
@@ -96,7 +102,7 @@ namespace Squirrel
                 var sourceFileUrl = new Uri(baseUri, releaseEntryUrl).AbsoluteUri;
                 File.Delete(targetFile);
 
-                DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress);
+                DownloadManager.Instance.DownloadFile(sourceFileUrl, targetFile, parallelDownloadLimit, progress, status);
             }
 
             Task checksumAllPackages(IEnumerable<ReleaseEntry> releasesDownloaded)

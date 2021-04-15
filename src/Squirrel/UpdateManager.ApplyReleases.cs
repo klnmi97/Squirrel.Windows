@@ -34,7 +34,7 @@ namespace Squirrel
                 status = status ?? (_ => { });
 
                 progress(0);
-                status("Applying releases");
+                status("Applying updates");
                 
                 // Progress range: 00 -> 40
                 var release = await createFullPackagesFromDeltas(updateInfo.ReleasesToApply, updateInfo.CurrentlyInstalledVersion, new ApplyReleasesProgress(updateInfo.ReleasesToApply.Count, x => progress(CalculateProgress(x, 0, 40))));
@@ -106,7 +106,7 @@ namespace Squirrel
                 }
 
                 progress(100);
-                status("Applying releases finished");
+                status("Applying updates finished");
 
                 return ret;
             }

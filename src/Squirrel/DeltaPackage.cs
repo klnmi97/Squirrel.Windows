@@ -174,6 +174,89 @@ namespace Squirrel
             return new ReleasePackage(outputFile);
         }
 
+        public ReleasePackage ApplyDeltaPackage2(string baseTempDir, ReleasePackage deltaPackage, string outputFile, Action<int> progress)
+        {
+            Contract.Requires(deltaPackage != null);
+            Contract.Requires(!String.IsNullOrEmpty(outputFile) && !File.Exists(outputFile));
+
+            string deltaPath;
+
+            using (Utility.WithTempDirectory(out deltaPath, localAppDirectory))
+            {
+                using (ZipFile zip = ZipFile.Read(deltaPackage.InputPackageFile))
+                {
+                    zip.ExtractAll(deltaPath, ExtractExistingFileAction.OverwriteSilently);
+                }
+
+                progress(25);
+
+                /*using (ZipFile zip = ZipFile.Read(basePackage.InputPackageFile))
+                {
+                    zip.ExtractAll(workingPath, ExtractExistingFileAction.OverwriteSilently);
+                }*/
+
+                //progress(50);
+
+                var pathsVisited = new List<string>();
+
+                var deltaPathRelativePaths = new DirectoryInfo(deltaPath).GetAllFilesRecursively()
+                    .Select(x => x.FullName.Replace(deltaPath + Path.DirectorySeparatorChar, ""))
+                    .ToArray();
+
+                // Apply all of the .diff files
+                deltaPathRelativePaths
+                    .Where(x => x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase))
+                    .Where(x => !x.EndsWith(".shasum", StringComparison.InvariantCultureIgnoreCase))
+                    .Where(x => !x.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase) ||
+                                !deltaPathRelativePaths.Contains(x.Replace(".diff", ".hdiffz")))
+                    .ForEach(file => {
+                        pathsVisited.Add(Regex.Replace(file, @"\.(h)?diff(z)?$", "").ToLowerInvariant());
+                        applyDiffToFile(deltaPath, file, baseTempDir);
+                    });
+
+                progress(75);
+
+                // Delete all of the files that were in the old package but
+                // not in the new one.
+                new DirectoryInfo(baseTempDir).GetAllFilesRecursively()
+                    .Select(x => x.FullName.Replace(baseTempDir + Path.DirectorySeparatorChar, "").ToLowerInvariant())
+                    .Where(x => x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase) && !pathsVisited.Contains(x))
+                    .ForEach(x => {
+                        this.Log().Info("{0} was in old package but not in new one, deleting", x);
+                        File.Delete(Path.Combine(baseTempDir, x));
+                    });
+
+                progress(80);
+
+                // Update all the files that aren't in 'lib' with the delta
+                // package's versions (i.e. the nuspec file, etc etc).
+                deltaPathRelativePaths
+                    .Where(x => !x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase))
+                    .ForEach(x => {
+                        this.Log().Info("Updating metadata file: {0}", x);
+                        File.Copy(Path.Combine(deltaPath, x), Path.Combine(baseTempDir, x), true);
+                    });
+
+                File.WriteAllText(outputFile, "Repacked full package placeholder file.");
+
+                /*this.Log().Info("Repacking into full package: {0}", outputFile);
+                using (ZipFile zip = new ZipFile())
+                {
+                    zip.UseZip64WhenSaving = Zip64Option.Always;
+                    zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
+                    zip.AddDirectory(baseTempDir);
+                    zip.Save(outputFile);
+                }*/
+
+                // 7-zip speed testing
+                //Utility.CreateZipFromDirectory(outputFile, workingPath).Wait();
+
+                progress(100);
+            }
+
+            return new ReleasePackage(outputFile);
+        }
+
         async Task createDeltaForSingleFile(FileInfo targetFile, DirectoryInfo workingDirectory, Dictionary<string, string> baseFileListing)
         {
             // NB: There are three cases here that we'll handle:

@@ -402,31 +402,48 @@ namespace Squirrel
                 // release 3: 40 => 60
                 // release 4: 60 => 80
                 // release 5: 80 => 100
-                // 
+                //
 
-                // Smash together our base full package and the nearest delta
-                var ret = await Task.Run(() => {
-                    var basePkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", currentVersion.Filename));
-                    var deltaPkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", releasesToApply.First().Filename));
+                var basePkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", currentVersion.Filename));
+                var packagesPath = Path.GetDirectoryName(basePkg.InputPackageFile);
+                var basePkgPath = Path.Combine(packagesPath, basePkg.Version.ToString());
+                var deltaBuilder = new DeltaPackageBuilder(Directory.GetParent(this.rootAppDirectory).FullName);
 
-                    var deltaBuilder = new DeltaPackageBuilder(Directory.GetParent(this.rootAppDirectory).FullName);
+                string baseTempPath;
+                ReleasePackage ret = null;
 
-                    return deltaBuilder.ApplyDeltaPackage(basePkg, deltaPkg,
-                        Regex.Replace(deltaPkg.InputPackageFile, @"-delta.nupkg$", ".nupkg", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
-                        x => progress.ReportReleaseProgress(x));
-                });
+                // Create a temporary directory where to copy last app version.
+                using (Utility.WithTempDirectory(out baseTempPath, Directory.GetParent(this.rootAppDirectory).FullName)) {
+                    await Task.Run(() => {
+                        // Copy last app version to the temporary directory.
+                        Utility.CopyAll(new DirectoryInfo(basePkgPath), new DirectoryInfo(baseTempPath));
 
-                progress.FinishRelease();
+                        // Apply all the deltas.
+                        foreach (var re in releasesToApply) {
+                            var deltaPkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", re.Filename));
+                            ret = deltaBuilder.ApplyDeltaPackage2(baseTempPath, deltaPkg,
+                                Regex.Replace(deltaPkg.InputPackageFile, @"-delta.nupkg$", ".nupkg", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+                                x => progress.ReportReleaseProgress(x));
+                            progress.FinishRelease();
+                        }
 
-                if (releasesToApply.Count() == 1) {
-                    return ReleaseEntry.GenerateFromFile(ret.InputPackageFile);
+                        // Copy updated app back to the packages directory for the backup.
+                        Utility.CopyAll(new DirectoryInfo(baseTempPath), new DirectoryInfo(Path.Combine(packagesPath, ret.Version.ToString())));
+
+                        // Delete lib folder to have the nuget package small.
+                        Directory.Delete(Path.Combine(baseTempPath, "lib"), true);
+
+                        // Create updated app nuget package which contains nuget metadata without app.
+                        // Will be used later by CreateUninstallerRegistryEntry function.
+                        using (ZipFile zip = new ZipFile()) {
+                            zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
+                            zip.AddDirectory(baseTempPath);
+                            zip.Save(ret.InputPackageFile);
+                        }
+                    });
                 }
 
-                var fi = new FileInfo(ret.InputPackageFile);
-                var entry = ReleaseEntry.GenerateFromFile(fi.OpenRead(), fi.Name);
-
-                // Recursively combine the rest of them
-                return await createFullPackagesFromDeltas(releasesToApply.Skip(1), entry, progress);
+                return ReleaseEntry.GenerateFromFile(ret.InputPackageFile);
             }
 
             void executeSelfUpdate(SemanticVersion currentVersion)

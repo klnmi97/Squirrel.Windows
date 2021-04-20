@@ -276,6 +276,10 @@ namespace Squirrel.Tests
                 string packagesDir = Path.Combine(appDir, "packages");
                 Directory.CreateDirectory(packagesDir);
 
+                Utility.ExtractZipToDirectory(
+                    IntegrationTestHelper.GetPath("fixtures", "Squirrel.Core.1.1.0.0-full.nupkg"),
+                    Path.Combine(packagesDir, "1.1.0.0")).Wait();
+
                 new[] {
                     "Squirrel.Core.1.1.0.0-full.nupkg",
                     "Squirrel.Core.1.2.0.0-full.nupkg",
@@ -324,6 +328,10 @@ namespace Squirrel.Tests
                 string appDir = Path.Combine(tempDir, "theApp");
                 string packagesDir = Path.Combine(appDir, "packages");
                 Directory.CreateDirectory(packagesDir);
+
+                Utility.ExtractZipToDirectory(
+                    IntegrationTestHelper.GetPath("fixtures", "Squirrel.Core.1.0.0.0-full.nupkg"),
+                    Path.Combine(packagesDir, "1.0.0.0")).Wait();
 
                 new[] {
                     "Squirrel.Core.1.1.0.0-full.nupkg",

@@ -327,16 +327,15 @@ namespace Squirrel
                         ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback).Wait();
                     }
 
-                    // Find framework directory in the nuget extracted folder.
+                    // Find framework directories in the nuget extracted folder.
                     string[] frameworkDirs = Directory.GetDirectories(Path.Combine(fullPackageDir, "lib"));
+                    DirectoryInfo targetDir = new DirectoryInfo(target.FullName);
 
-                    if (frameworkDirs.Count() != 1) {
-                        throw new Exception("Cannot locate framework directory.");
+                    // Copies application to the target installation directory.
+                    foreach (var fd in frameworkDirs) {
+                        Utility.CopyAll(new DirectoryInfo(fd), targetDir);
                     }
 
-                    DirectoryInfo targetDir = new DirectoryInfo(target.FullName);
-                    // Copies application to the target installation directory.
-                    Utility.CopyAll(new DirectoryInfo(frameworkDirs.ElementAt(0)), targetDir);
                     FileInfo[] exeStubFiles = targetDir.GetFiles("*_ExecutionStub.exe", SearchOption.AllDirectories);
 
                     // Move and rename execution stubs to the app root directory.

@@ -325,7 +325,6 @@ namespace Squirrel
                         string fullPackageNuget = Path.Combine(updateInfo.PackageDirectory, release.Filename);
                         // Extract nuget in the packages directory to have it prepared for applying deltas later.
                         ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback).Wait();
-                        File.Delete(fullPackageNuget);
                     }
 
                     // Find framework directory in the nuget extracted folder.
@@ -339,10 +338,6 @@ namespace Squirrel
                     // Copies application to the target installation directory.
                     Utility.CopyAll(new DirectoryInfo(frameworkDirs.ElementAt(0)), targetDir);
                     FileInfo[] exeStubFiles = targetDir.GetFiles("*_ExecutionStub.exe", SearchOption.AllDirectories);
-
-                    if (exeStubFiles.IsEmpty()) {
-                        throw new Exception("Cannot locate any execution stub file.");
-                    }
 
                     // Move and rename execution stubs to the app root directory.
                     installExecutionStubs(exeStubFiles);

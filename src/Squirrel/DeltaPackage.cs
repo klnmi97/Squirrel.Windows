@@ -17,7 +17,7 @@ namespace Squirrel
     public interface IDeltaPackageBuilder
     {
         ReleasePackage CreateDeltaPackage(ReleasePackage basePackage, ReleasePackage newPackage, string outputFile);
-        ReleasePackage ApplyDeltaPackage(ReleasePackage basePackage, ReleasePackage deltaPackage, string outputFile);
+        ReleasePackage ApplyDeltaPackage(string baseTempDir, ReleasePackage deltaPackage, string outputMetadataPkg);
     }
 
     public class DeltaPackageBuilder : IEnableLogger, IDeltaPackageBuilder
@@ -90,94 +90,15 @@ namespace Squirrel
             return new ReleasePackage(outputFile);
         }
 
-        public ReleasePackage ApplyDeltaPackage(ReleasePackage basePackage, ReleasePackage deltaPackage, string outputFile)
+        public ReleasePackage ApplyDeltaPackage(string baseTempDir, ReleasePackage deltaPackage, string outputMetadataPkg)
         {
-            return ApplyDeltaPackage(basePackage, deltaPackage, outputFile, x => { });
+            return ApplyDeltaPackage(baseTempDir, deltaPackage, outputMetadataPkg, x => { });
         }
 
-        public ReleasePackage ApplyDeltaPackage(ReleasePackage basePackage, ReleasePackage deltaPackage, string outputFile, Action<int> progress)
+        public ReleasePackage ApplyDeltaPackage(string baseTempDir, ReleasePackage deltaPackage, string outputMetadataPkg, Action<int> progress)
         {
             Contract.Requires(deltaPackage != null);
-            Contract.Requires(!String.IsNullOrEmpty(outputFile) && !File.Exists(outputFile));
-
-            string workingPath;
-            string deltaPath;
-
-            using (Utility.WithTempDirectory(out deltaPath, localAppDirectory))
-            using (Utility.WithTempDirectory(out workingPath, localAppDirectory)) {
-				using (ZipFile zip = ZipFile.Read(deltaPackage.InputPackageFile)) {
-					zip.ExtractAll(deltaPath, ExtractExistingFileAction.OverwriteSilently);
-				}
-
-				progress(25);
-
-				using (ZipFile zip = ZipFile.Read(basePackage.InputPackageFile)) {
-					zip.ExtractAll(workingPath, ExtractExistingFileAction.OverwriteSilently);
-				}
-
-				progress(50);
-
-                var pathsVisited = new List<string>();
-
-                var deltaPathRelativePaths = new DirectoryInfo(deltaPath).GetAllFilesRecursively()
-                    .Select(x => x.FullName.Replace(deltaPath + Path.DirectorySeparatorChar, ""))
-                    .ToArray();
-
-                // Apply all of the .diff files
-                deltaPathRelativePaths
-                    .Where(x => x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase))
-                    .Where(x => !x.EndsWith(".shasum", StringComparison.InvariantCultureIgnoreCase))
-                    .Where(x => !x.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase) ||
-                                !deltaPathRelativePaths.Contains(x.Replace(".diff", ".hdiffz")))
-                    .ForEach(file => {
-                        pathsVisited.Add(Regex.Replace(file, @"\.(h)?diff(z)?$", "").ToLowerInvariant());
-                        applyDiffToFile(deltaPath, file, workingPath);
-                    });
-
-                progress(75);
-
-                // Delete all of the files that were in the old package but
-                // not in the new one.
-                new DirectoryInfo(workingPath).GetAllFilesRecursively()
-                    .Select(x => x.FullName.Replace(workingPath + Path.DirectorySeparatorChar, "").ToLowerInvariant())
-                    .Where(x => x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase) && !pathsVisited.Contains(x))
-                    .ForEach(x => {
-                        this.Log().Info("{0} was in old package but not in new one, deleting", x);
-                        File.Delete(Path.Combine(workingPath, x));
-                    });
-
-                progress(80);
-
-                // Update all the files that aren't in 'lib' with the delta
-                // package's versions (i.e. the nuspec file, etc etc).
-                deltaPathRelativePaths
-                    .Where(x => !x.StartsWith("lib", StringComparison.InvariantCultureIgnoreCase))
-                    .ForEach(x => {
-                        this.Log().Info("Updating metadata file: {0}", x);
-                        File.Copy(Path.Combine(deltaPath, x), Path.Combine(workingPath, x), true);
-                    });
-
-                this.Log().Info("Repacking into full package: {0}", outputFile);
-				using (ZipFile zip = new ZipFile())	{
-					zip.UseZip64WhenSaving = Zip64Option.Always;
-					zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
-					zip.AddDirectory(workingPath);
-					zip.Save(outputFile);
-				}
-
-				// 7-zip speed testing
-				//Utility.CreateZipFromDirectory(outputFile, workingPath).Wait();
-
-				progress(100);
-            }
-
-            return new ReleasePackage(outputFile);
-        }
-
-        public ReleasePackage ApplyDeltaPackage2(string baseTempDir, ReleasePackage deltaPackage, string outputFile, Action<int> progress)
-        {
-            Contract.Requires(deltaPackage != null);
-            Contract.Requires(!String.IsNullOrEmpty(outputFile) && !File.Exists(outputFile));
+            Contract.Requires(!String.IsNullOrEmpty(outputMetadataPkg) && !File.Exists(outputMetadataPkg));
 
             string deltaPath;
 
@@ -189,13 +110,6 @@ namespace Squirrel
                 }
 
                 progress(25);
-
-                /*using (ZipFile zip = ZipFile.Read(basePackage.InputPackageFile))
-                {
-                    zip.ExtractAll(workingPath, ExtractExistingFileAction.OverwriteSilently);
-                }*/
-
-                //progress(50);
 
                 var pathsVisited = new List<string>();
 
@@ -237,24 +151,20 @@ namespace Squirrel
                         File.Copy(Path.Combine(deltaPath, x), Path.Combine(baseTempDir, x), true);
                     });
 
-                File.WriteAllText(outputFile, "Repacked full package placeholder file.");
-
-                /*this.Log().Info("Repacking into full package: {0}", outputFile);
+                // Create nuget package which contains only nuget metadata without app.
+                // Can be used later by functions which expects nupkg instead of unpacked dir. 
                 using (ZipFile zip = new ZipFile())
                 {
-                    zip.UseZip64WhenSaving = Zip64Option.Always;
                     zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
                     zip.AddDirectory(baseTempDir);
-                    zip.Save(outputFile);
-                }*/
-
-                // 7-zip speed testing
-                //Utility.CreateZipFromDirectory(outputFile, workingPath).Wait();
+                    zip.RemoveSelectedEntries("lib\\*");
+                    zip.Save(outputMetadataPkg);
+                }
 
                 progress(100);
             }
 
-            return new ReleasePackage(outputFile);
+            return new ReleasePackage(outputMetadataPkg);
         }
 
         async Task createDeltaForSingleFile(FileInfo targetFile, DirectoryInfo workingDirectory, Dictionary<string, string> baseFileListing)
@@ -349,37 +259,48 @@ namespace Squirrel
             var finalTarget = Path.Combine(workingDirectory, Regex.Replace(relativeFilePath, @"\.(h)?diff(z)?$", ""));
 
             var tempTargetFile = default(string);
+
+            // PO: needs fix, does not create any file (redmine #16652)
             Utility.WithTempFile(out tempTargetFile, localAppDirectory);
 
-            try {
+            try
+            {
                 // NB: Zero-length diffs indicate the file hasn't actually changed
-                if (new FileInfo(inputFile).Length == 0) {
+                if (new FileInfo(inputFile).Length == 0)
+                {
                     this.Log().Info("{0} exists unchanged, skipping", relativeFilePath);
                     return;
                 }
 
-                 if (relativeFilePath.EndsWith(".hdiffz", StringComparison.InvariantCultureIgnoreCase)) {
-					this.Log().Info("Applying HDiffz to {0}", relativeFilePath);
-					var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hpatchz.exe"),
-										String.Format("{0} {1} {2}", finalTarget, inputFile, tempTargetFile),
-										CancellationToken.None);
-					task.Wait();
+                if (relativeFilePath.EndsWith(".hdiffz", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    this.Log().Info("Applying HDiffz to {0}", relativeFilePath);
+                    var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hpatchz.exe"),
+                                        String.Format("{0} {1} {2}", finalTarget, inputFile, tempTargetFile),
+                                        CancellationToken.None);
+                    task.Wait();
 
-					if (task.Result.Item1 != 0) {
-						this.Log().Warn(String.Format("Cannot apply patch to {0}", finalTarget));
-						throw new Exception(String.Format("Cannot apply patch to {0}", finalTarget));
-					}
+                    if (task.Result.Item1 != 0)
+                    {
+                        this.Log().Warn(String.Format("Cannot apply patch to {0}", finalTarget));
+                        throw new Exception(String.Format("Cannot apply patch to {0}", finalTarget));
+                    }
 
-					verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
-                 } else if (relativeFilePath.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase)) {
+                    verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
+                }
+                else if (relativeFilePath.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase))
+                {
                     this.Log().Info("Applying MSDiff to {0}", relativeFilePath);
                     var msDelta = new MsDeltaCompression();
                     msDelta.ApplyDelta(inputFile, finalTarget, tempTargetFile);
 
                     verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
-                } else {
+                }
+                else
+                {
                     using (var of = File.OpenWrite(tempTargetFile))
-                    using (var inf = File.OpenRead(inputFile)) {
+                    using (var inf = File.OpenRead(inputFile))
+                    {
                         this.Log().Info("Adding new file: {0}", relativeFilePath);
                         inf.CopyTo(of);
                     }
@@ -391,7 +312,9 @@ namespace Squirrel
                 if (!targetPath.Exists) targetPath.Create();
 
                 File.Move(tempTargetFile, finalTarget);
-            } finally {
+            }
+            finally
+            {
                 if (File.Exists(tempTargetFile)) Utility.DeleteFileHarder(tempTargetFile, true);
             }
         }

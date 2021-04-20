@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.Contracts;
@@ -304,6 +304,7 @@ namespace Squirrel
             return Disposable.Create(() => Task.Run(async () => await DeleteDirectory(tempDir.FullName)).Wait());
         }
 
+        // PO: needs fix, does not create any file (redmine #16652)
         public static IDisposable WithTempFile(out string path, string localAppDirectory = null)
         {
             var di = GetTempDirectory(localAppDirectory);

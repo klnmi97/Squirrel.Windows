@@ -421,7 +421,7 @@ namespace Squirrel
                         // Apply all the deltas.
                         foreach (var re in releasesToApply) {
                             var deltaPkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", re.Filename));
-                            ret = deltaBuilder.ApplyDeltaPackage2(baseTempPath, deltaPkg,
+                            ret = deltaBuilder.ApplyDeltaPackage(baseTempPath, deltaPkg,
                                 Regex.Replace(deltaPkg.InputPackageFile, @"-delta.nupkg$", ".nupkg", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
                                 x => progress.ReportReleaseProgress(x));
                             progress.FinishRelease();
@@ -429,17 +429,6 @@ namespace Squirrel
 
                         // Copy updated app back to the packages directory for the backup.
                         Utility.CopyAll(new DirectoryInfo(baseTempPath), new DirectoryInfo(Path.Combine(packagesPath, ret.Version.ToString())));
-
-                        // Delete lib folder to have the nuget package small.
-                        Directory.Delete(Path.Combine(baseTempPath, "lib"), true);
-
-                        // Create updated app nuget package which contains nuget metadata without app.
-                        // Will be used later by CreateUninstallerRegistryEntry function.
-                        using (ZipFile zip = new ZipFile()) {
-                            zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
-                            zip.AddDirectory(baseTempPath);
-                            zip.Save(ret.InputPackageFile);
-                        }
                     });
                 }
 

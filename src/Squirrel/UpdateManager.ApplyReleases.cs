@@ -404,29 +404,36 @@ namespace Squirrel
                 var deltaBuilder = new DeltaPackageBuilder(Directory.GetParent(this.rootAppDirectory).FullName);
 
                 string baseTempPath;
-                ReleasePackage ret = null;
+                ReleasePackage finalPkgMetadata = null;
 
                 // Create a temporary directory where to copy last app version.
                 using (Utility.WithTempDirectory(out baseTempPath, Directory.GetParent(this.rootAppDirectory).FullName)) {
-                    await Task.Run(() => {
+                    await Task.Run(async () => {
                         // Copy last app version to the temporary directory.
                         Utility.CopyAll(new DirectoryInfo(basePkgPath), new DirectoryInfo(baseTempPath));
 
                         // Apply all the deltas.
                         foreach (var re in releasesToApply) {
                             var deltaPkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", re.Filename));
-                            ret = deltaBuilder.ApplyDeltaPackage(baseTempPath, deltaPkg,
+                            finalPkgMetadata = deltaBuilder.ApplyDeltaPackage(baseTempPath, deltaPkg,
                                 Regex.Replace(deltaPkg.InputPackageFile, @"-delta.nupkg$", ".nupkg", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
                                 x => progress.ReportReleaseProgress(x));
                             progress.FinishRelease();
                         }
 
-                        // Copy updated app back to the packages directory for the backup.
-                        Utility.CopyAll(new DirectoryInfo(baseTempPath), new DirectoryInfo(Path.Combine(packagesPath, ret.Version.ToString())));
+                        var finalDirPath = Path.Combine(packagesPath, finalPkgMetadata.Version.ToString());
+                        // The final directory may exist because of some previous error.
+                        if (Directory.Exists(finalDirPath)) {
+                            // We have to delete it, otherwise Directory.Move will throw IOException.
+                            await Utility.DeleteDirectory(finalDirPath);
+                        }
+
+                        // Move updated app back to the packages directory for the backup - future delta updates.
+                        Directory.Move(baseTempPath, finalDirPath);
                     });
                 }
 
-                return ReleaseEntry.GenerateFromFile(ret.InputPackageFile);
+                return ReleaseEntry.GenerateFromFile(finalPkgMetadata.InputPackageFile);
             }
 
             void executeSelfUpdate(SemanticVersion currentVersion)

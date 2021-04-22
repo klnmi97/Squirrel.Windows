@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
@@ -724,6 +724,12 @@ namespace Squirrel
                     }
 
                     File.Delete(Path.Combine(pkgDir, entry.Filename));
+
+                    var entryDir = Path.Combine(pkgDir, entry.Version.ToString());
+                    if (Directory.Exists(entryDir)) {
+                        // Delete previous unpacked nuget package
+                        await Utility.DeleteDirectory(entryDir);
+                    }
                 }
 
                 ReleaseEntry.WriteReleaseFile(new[] { releaseEntry }, releasesFile);

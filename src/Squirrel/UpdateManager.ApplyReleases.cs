@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
@@ -324,7 +324,7 @@ namespace Squirrel
                     if (!Directory.Exists(fullPackageDir)) {
                         string fullPackageNuget = Path.Combine(updateInfo.PackageDirectory, release.Filename);
                         // Extract nuget in the packages directory to have it prepared for applying deltas later.
-                        ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback).Wait();
+                        await ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback);
                     }
 
                     // Find framework directories in the nuget extracted folder.
@@ -400,7 +400,7 @@ namespace Squirrel
 
                 var basePkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", currentVersion.Filename));
                 var packagesPath = Path.GetDirectoryName(basePkg.InputPackageFile);
-                var basePkgPath = Path.Combine(packagesPath, basePkg.Version.ToString());
+                var unpackedBasePkgPath = Path.Combine(packagesPath, basePkg.Version.ToString());
                 var deltaBuilder = new DeltaPackageBuilder(Directory.GetParent(this.rootAppDirectory).FullName);
 
                 string baseTempPath;
@@ -409,8 +409,16 @@ namespace Squirrel
                 // Create a temporary directory where to copy last app version.
                 using (Utility.WithTempDirectory(out baseTempPath, Directory.GetParent(this.rootAppDirectory).FullName)) {
                     await Task.Run(async () => {
-                        // Copy last app version to the temporary directory.
-                        Utility.CopyAll(new DirectoryInfo(basePkgPath), new DirectoryInfo(baseTempPath));
+                        // This condition is here for the backward compatibility to be able to apply deltas to the Squirrel version 
+                        // which did multiple times packing before performance improvement (redmine #15144).
+                        if (!Directory.Exists(unpackedBasePkgPath)) {
+                            // Extract nuget in the packages directory to have it prepared for applying deltas.
+                            await ReleasePackage.extractZipWithEscaping(basePkg.InputPackageFile, baseTempPath, (x) => { });
+                        }
+                        else {
+                            // Copy last app version to the temporary directory.
+                            Utility.CopyAll(new DirectoryInfo(unpackedBasePkgPath), new DirectoryInfo(baseTempPath));
+                        }
 
                         // Apply all the deltas.
                         foreach (var re in releasesToApply) {

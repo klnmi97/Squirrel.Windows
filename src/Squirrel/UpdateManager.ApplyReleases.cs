@@ -320,11 +320,27 @@ namespace Squirrel
                     this.Log().Info("Writing files to app directory: {0}", target.FullName);
 
                     string fullPackageDir = Path.Combine(updateInfo.PackageDirectory, release.Version.ToString());
+                    string fullPackageNuget = Path.Combine(updateInfo.PackageDirectory, release.Filename);
+                    
+                    // Check if the release to apply is full nuget package.
+                    if (updateInfo.ReleasesToApply.Count == 1 && updateInfo.ReleasesToApply[0].IsDelta == false) {
+                        // This might happen if the previous release applying failed.
+                        if (Directory.Exists(fullPackageDir)) {
+                            await Utility.DeleteDirectory(fullPackageDir);
+                        }
 
-                    if (!Directory.Exists(fullPackageDir)) {
-                        string fullPackageNuget = Path.Combine(updateInfo.PackageDirectory, release.Filename);
-                        // Extract nuget in the packages directory to have it prepared for applying deltas later.
+                        // Extract nuget in the packages directory to have it prepared for deltas applying in the future.
                         await ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback);
+
+                        // Create nuget package which contains only nuget metadata without app.
+                        // Can be used later by functions which expects nupkg instead of unpacked dir.
+                        // It overwrites downloaded full package to save some space.
+                        using (ZipFile zip = new ZipFile()) {
+                            zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
+                            zip.AddDirectory(fullPackageDir);
+                            zip.RemoveSelectedEntries("lib\\*");
+                            zip.Save(fullPackageNuget);
+                        }
                     }
 
                     // Find framework directories in the nuget extracted folder.

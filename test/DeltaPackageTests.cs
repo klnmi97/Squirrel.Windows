@@ -61,7 +61,7 @@ namespace Squirrel.Tests.Core
             }
         }
 
-        [Fact(Skip = "PO: Rewrite this test, slack nugets uses bsdiff.")]
+        [Fact(Skip = "PO: Rewrite this test, slack nugets use bsdiff.")]
         public void ApplyDeltaWithBothBsdiffAndNormalDiffDoesntFail()
         {
             var basePackage = new ReleasePackage(IntegrationTestHelper.GetPath("fixtures", "slack-1.1.8-full.nupkg"));

@@ -263,17 +263,14 @@ namespace Squirrel
             // PO: needs fix, does not create any file (redmine #16652)
             Utility.WithTempFile(out tempTargetFile, localAppDirectory);
 
-            try
-            {
+            try {
                 // NB: Zero-length diffs indicate the file hasn't actually changed
-                if (new FileInfo(inputFile).Length == 0)
-                {
+                if (new FileInfo(inputFile).Length == 0) {
                     this.Log().Info("{0} exists unchanged, skipping", relativeFilePath);
                     return;
                 }
 
-                if (relativeFilePath.EndsWith(".hdiffz", StringComparison.InvariantCultureIgnoreCase))
-                {
+                if (relativeFilePath.EndsWith(".hdiffz", StringComparison.InvariantCultureIgnoreCase)) {
                     this.Log().Info("Applying HDiffz to {0}", relativeFilePath);
                     var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hpatchz.exe"),
                                         String.Format("{0} {1} {2}", finalTarget, inputFile, tempTargetFile),
@@ -288,16 +285,14 @@ namespace Squirrel
 
                     verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
                 }
-                else if (relativeFilePath.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase))
-                {
+                else if (relativeFilePath.EndsWith(".diff", StringComparison.InvariantCultureIgnoreCase)) {
                     this.Log().Info("Applying MSDiff to {0}", relativeFilePath);
                     var msDelta = new MsDeltaCompression();
                     msDelta.ApplyDelta(inputFile, finalTarget, tempTargetFile);
 
                     verifyPatchedFile(relativeFilePath, inputFile, tempTargetFile);
                 }
-                else
-                {
+                else {
                     using (var of = File.OpenWrite(tempTargetFile))
                     using (var inf = File.OpenRead(inputFile))
                     {
@@ -313,8 +308,7 @@ namespace Squirrel
 
                 File.Move(tempTargetFile, finalTarget);
             }
-            finally
-            {
+            finally {
                 if (File.Exists(tempTargetFile)) Utility.DeleteFileHarder(tempTargetFile, true);
             }
         }

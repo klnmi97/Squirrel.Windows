@@ -138,6 +138,7 @@ namespace Squirrel
             using (Utility.WithTempDirectory(out tempPath, null)) {
                 var tempDir = new DirectoryInfo(tempPath);
 
+                // The wrapping function does not support progress showing, so pass empty lambda.
                 extractZipWithEscaping(InputPackageFile, tempPath, x => { }).Wait();
 
                 this.Log().Info("Extracting dependent packages: [{0}]", String.Join(",", dependencies.Select(x => x.Id)));
@@ -164,6 +165,13 @@ namespace Squirrel
             }
         }
 
+        /// <summary>
+        /// Extracts zip archive with escaping.
+        /// </summary>
+        /// <param name="zipFilePath">Zip file path.</param>
+        /// <param name="outFolder">Output folder.</param>
+        /// <param name="progress">Ui progress showing function.</param>
+        /// <returns>Task handle for the extract zip task.</returns>
         public static Task extractZipWithEscaping(string zipFilePath, string outFolder, Action<int> progress)
         {
             return Task.Run(() => {
@@ -185,6 +193,21 @@ namespace Squirrel
                     }
                 }
             });
+        }
+
+        /// <summary>
+        /// Creates metadata only nuget package which does not contain app.
+        /// </summary>
+        /// <param name="extractedPkgPath">Extracted nuget package path.</param>
+        /// <param name="metadataPkgPath">Output metadata nuget package path.</param>
+        public static void createMetadataPkg(string extractedPkgPath, string metadataPkgPath)
+        {
+            using (ZipFile zip = new ZipFile()) {
+                zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
+                zip.AddDirectory(extractedPkgPath);
+                zip.RemoveSelectedEntries("lib\\*");
+                zip.Save(metadataPkgPath);
+            }
         }
 
         void extractDependentPackages(IEnumerable<IPackage> dependencies, DirectoryInfo tempPath, FrameworkName framework)

@@ -335,12 +335,7 @@ namespace Squirrel
                         // Create nuget package which contains only nuget metadata without app.
                         // Can be used later by functions which expects nupkg instead of unpacked dir.
                         // It overwrites downloaded full package to save some space.
-                        using (ZipFile zip = new ZipFile()) {
-                            zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
-                            zip.AddDirectory(fullPackageDir);
-                            zip.RemoveSelectedEntries("lib\\*");
-                            zip.Save(fullPackageNuget);
-                        }
+                        ReleasePackage.createMetadataPkg(fullPackageDir, fullPackageNuget);
                     }
 
                     // Find framework directories in the nuget extracted folder.

@@ -151,16 +151,11 @@ namespace Squirrel
                         File.Copy(Path.Combine(deltaPath, x), Path.Combine(baseTempDir, x), true);
                     });
 
-                // Create nuget package which contains only nuget metadata without app.
-                // Can be used later by functions which expects nupkg instead of unpacked dir. 
-                using (ZipFile zip = new ZipFile())
-                {
-                    zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
-                    zip.AddDirectory(baseTempDir);
-                    zip.RemoveSelectedEntries("lib\\*");
-                    zip.Save(outputMetadataPkg);
-                }
 
+
+                // Create nuget package which contains only nuget metadata without app.
+                // Can be used later by functions which expects nupkg instead of unpacked dir.
+                ReleasePackage.createMetadataPkg(baseTempDir, outputMetadataPkg);
                 progress(100);
             }
 

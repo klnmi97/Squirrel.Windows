@@ -13,6 +13,7 @@ using Squirrel.SimpleSplat;
 using System.Threading;
 using Squirrel.Shell;
 using Microsoft.Win32;
+using Ionic.Zip;
 
 namespace Squirrel
 {
@@ -317,14 +318,65 @@ namespace Squirrel
                     target.Create();
 
                     this.Log().Info("Writing files to app directory: {0}", target.FullName);
-                    await ReleasePackage.ExtractZipForInstall(
-                        Path.Combine(updateInfo.PackageDirectory, release.Filename),
-                        target.FullName,
-                        rootAppDirectory,
-                        progressCallback);
+
+                    string fullPackageDir = Path.Combine(updateInfo.PackageDirectory, release.Version.ToString());
+                    string fullPackageNuget = Path.Combine(updateInfo.PackageDirectory, release.Filename);
+                    
+                    // Check if the release to apply is full nuget package.
+                    if (updateInfo.ReleasesToApply.Count == 1 && updateInfo.ReleasesToApply[0].IsDelta == false) {
+                        // This might happen if the previous release applying failed.
+                        if (Directory.Exists(fullPackageDir)) {
+                            await Utility.DeleteDirectory(fullPackageDir);
+                        }
+
+                        // Extract nuget in the packages directory to have it prepared for deltas applying in the future.
+                        await ReleasePackage.extractZipWithEscaping(fullPackageNuget, fullPackageDir, progressCallback);
+
+                        // Create nuget package which contains only nuget metadata without app.
+                        // Can be used later by functions which expects nupkg instead of unpacked dir.
+                        // It overwrites downloaded full package to save some space.
+                        ReleasePackage.createMetadataPkg(fullPackageDir, fullPackageNuget);
+                    }
+
+                    // Find framework directories in the nuget extracted folder.
+                    string[] frameworkDirs = Directory.GetDirectories(Path.Combine(fullPackageDir, "lib"));
+                    DirectoryInfo targetDir = new DirectoryInfo(target.FullName);
+
+                    // Copies application to the target installation directory.
+                    foreach (var fd in frameworkDirs) {
+                        Utility.CopyAll(new DirectoryInfo(fd), targetDir);
+                    }
+
+                    FileInfo[] exeStubFiles = targetDir.GetFiles("*_ExecutionStub.exe", SearchOption.AllDirectories);
+
+                    // Move and rename execution stubs to the app root directory.
+                    installExecutionStubs(exeStubFiles);
 
                     return target.FullName;
                 });
+            }
+
+            void installExecutionStubs(FileInfo[] executionStubPaths)
+            {
+                foreach (FileInfo file in executionStubPaths) {
+                    try {
+                        // PO: This is really weird. Why is it here? Let's leave it here as it could have some reason...
+                        Utility.Retry(() => {
+                            // Rename the stub exe file after extraction.
+                            string exeFinalPath = Path.Combine(rootAppDirectory, file.Name.Replace("_ExecutionStub.exe", ".exe"));
+
+                            // Delete target file if exists, as File.Move() does not support overwrite.
+                            if (File.Exists(exeFinalPath)) {
+                                File.Delete(exeFinalPath);
+                            }
+
+                            File.Move(file.FullName, exeFinalPath);
+                        }, 5);
+                    }
+                    catch (Exception e) {
+                        LogHost.Default.WarnException("Can't write execution stub, probably in use", e);
+                    }
+                }
             }
 
             async Task<ReleaseEntry> createFullPackagesFromDeltas(IEnumerable<ReleaseEntry> releasesToApply, ReleaseEntry currentVersion, ApplyReleasesProgress progress)
@@ -355,31 +407,52 @@ namespace Squirrel
                 // release 3: 40 => 60
                 // release 4: 60 => 80
                 // release 5: 80 => 100
-                // 
+                //
 
-                // Smash together our base full package and the nearest delta
-                var ret = await Task.Run(() => {
-                    var basePkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", currentVersion.Filename));
-                    var deltaPkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", releasesToApply.First().Filename));
+                var basePkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", currentVersion.Filename));
+                var packagesPath = Path.GetDirectoryName(basePkg.InputPackageFile);
+                var unpackedBasePkgPath = Path.Combine(packagesPath, basePkg.Version.ToString());
+                var deltaBuilder = new DeltaPackageBuilder(Directory.GetParent(this.rootAppDirectory).FullName);
 
-                    var deltaBuilder = new DeltaPackageBuilder(Directory.GetParent(this.rootAppDirectory).FullName);
+                string baseTempPath;
+                ReleasePackage finalPkgMetadata = null;
 
-                    return deltaBuilder.ApplyDeltaPackage(basePkg, deltaPkg,
-                        Regex.Replace(deltaPkg.InputPackageFile, @"-delta.nupkg$", ".nupkg", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
-                        x => progress.ReportReleaseProgress(x));
-                });
+                // Create a temporary directory where to copy last app version.
+                using (Utility.WithTempDirectory(out baseTempPath, Directory.GetParent(this.rootAppDirectory).FullName)) {
+                    await Task.Run(async () => {
+                        // This condition is here for the backward compatibility to be able to apply deltas to the Squirrel version 
+                        // which did multiple times packing before performance improvement (redmine #15144).
+                        if (!Directory.Exists(unpackedBasePkgPath)) {
+                            // Extract nuget in the packages directory to have it prepared for applying deltas.
+                            await ReleasePackage.extractZipWithEscaping(basePkg.InputPackageFile, baseTempPath, (x) => { });
+                        }
+                        else {
+                            // Copy last app version to the temporary directory.
+                            Utility.CopyAll(new DirectoryInfo(unpackedBasePkgPath), new DirectoryInfo(baseTempPath));
+                        }
 
-                progress.FinishRelease();
+                        // Apply all the deltas.
+                        foreach (var re in releasesToApply) {
+                            var deltaPkg = new ReleasePackage(Path.Combine(rootAppDirectory, "packages", re.Filename));
+                            finalPkgMetadata = deltaBuilder.ApplyDeltaPackage(baseTempPath, deltaPkg,
+                                Regex.Replace(deltaPkg.InputPackageFile, @"-delta.nupkg$", ".nupkg", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+                                x => progress.ReportReleaseProgress(x));
+                            progress.FinishRelease();
+                        }
 
-                if (releasesToApply.Count() == 1) {
-                    return ReleaseEntry.GenerateFromFile(ret.InputPackageFile);
+                        var finalDirPath = Path.Combine(packagesPath, finalPkgMetadata.Version.ToString());
+                        // The final directory may exist because of some previous error.
+                        if (Directory.Exists(finalDirPath)) {
+                            // We have to delete it, otherwise Directory.Move will throw IOException.
+                            await Utility.DeleteDirectory(finalDirPath);
+                        }
+
+                        // Move updated app back to the packages directory for the backup - future delta updates.
+                        Directory.Move(baseTempPath, finalDirPath);
+                    });
                 }
 
-                var fi = new FileInfo(ret.InputPackageFile);
-                var entry = ReleaseEntry.GenerateFromFile(fi.OpenRead(), fi.Name);
-
-                // Recursively combine the rest of them
-                return await createFullPackagesFromDeltas(releasesToApply.Skip(1), entry, progress);
+                return ReleaseEntry.GenerateFromFile(finalPkgMetadata.InputPackageFile);
             }
 
             void executeSelfUpdate(SemanticVersion currentVersion)
@@ -670,6 +743,12 @@ namespace Squirrel
                     }
 
                     File.Delete(Path.Combine(pkgDir, entry.Filename));
+
+                    var entryDir = Path.Combine(pkgDir, entry.Version.ToString());
+                    if (Directory.Exists(entryDir)) {
+                        // Delete previous unpacked nuget package
+                        await Utility.DeleteDirectory(entryDir);
+                    }
                 }
 
                 ReleaseEntry.WriteReleaseFile(new[] { releaseEntry }, releasesFile);

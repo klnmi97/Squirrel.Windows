@@ -41,7 +41,7 @@ namespace Squirrel
                 {
                     var currentVersion = updateInfo.CurrentlyInstalledVersion != null ?
                         updateInfo.CurrentlyInstalledVersion.Version : null;
-
+                    // We remove all versions but current
                     await removeOldVersionFolders(new SemanticVersion[] { currentVersion });
                 }
                 catch (Exception ex)
@@ -584,12 +584,12 @@ namespace Squirrel
             /// <summary>
             /// Remove folders for older versions.
             /// </summary>
-            /// <param name="versionsToSave">Versions that should not be deleted</param>
+            /// <param name="versionsToKeep">Versions that should not be deleted</param>
             /// <param name="forceUninstall">Legacy argument</param>
             /// <returns></returns>
-            async Task removeOldVersionFolders(SemanticVersion[] versionsToSave, bool forceUninstall = false)
+            async Task removeOldVersionFolders(SemanticVersion[] versionsToKeep, bool forceUninstall = false)
             {
-                if(versionsToSave.Any(x => x == null))
+                if(versionsToKeep.Any(x => x == null))
                 {
                     return;
                 }
@@ -600,7 +600,7 @@ namespace Squirrel
                 // Get all directories which are not equal to any of the folders for versions from versionsToSave
                 var toCleanup = di.GetDirectories()
                     .Where(x => x.Name.ToLowerInvariant().Contains("app-"))
-                    .Where(x => versionsToSave.All(v => getDirectoryForRelease(v).Name != x.Name))
+                    .Where(x => versionsToKeep.All(v => getDirectoryForRelease(v).Name != x.Name))
                     .Where(x => !isAppFolderDead(x.FullName));
 
                 // Make all versions, which are scheduled to be deleted, dead
@@ -635,7 +635,7 @@ namespace Squirrel
                 // Include dead folders in folders to :fire:
                 toCleanup = di.GetDirectories()
                     .Where(x => x.Name.ToLowerInvariant().Contains("app-"))
-                    .Where(x => versionsToSave.All(v => getDirectoryForRelease(v).Name != x.Name));
+                    .Where(x => versionsToKeep.All(v => getDirectoryForRelease(v).Name != x.Name));
 
                 // Get the current process list in an attempt to not burn 
                 // directories which have running processes

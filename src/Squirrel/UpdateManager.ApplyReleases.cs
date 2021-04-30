@@ -46,7 +46,7 @@ namespace Squirrel
                 }
                 catch (Exception ex)
                 {
-                    this.Log().WarnException("Failed to remove old folders, continuing anyways", ex);
+                    this.Log().WarnException("Failed to remove old folders.", ex);
                 }
 
                 // Progress range: 00 -> 40

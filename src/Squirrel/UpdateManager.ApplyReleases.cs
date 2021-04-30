@@ -35,7 +35,20 @@ namespace Squirrel
 
                 progress(0);
                 status("Applying updates");
-                
+
+                // Try to remove older versions before applying releases
+                try
+                {
+                    var currentVersion = updateInfo.CurrentlyInstalledVersion != null ?
+                        updateInfo.CurrentlyInstalledVersion.Version : null;
+
+                    await removeOldVersionFolders(new SemanticVersion[] { currentVersion });
+                }
+                catch (Exception ex)
+                {
+                    this.Log().WarnException("Failed to remove old folders, continuing anyways", ex);
+                }
+
                 // Progress range: 00 -> 40
                 var release = await createFullPackagesFromDeltas(updateInfo.ReleasesToApply, updateInfo.CurrentlyInstalledVersion, new ApplyReleasesProgress(updateInfo.ReleasesToApply.Count, x => progress(CalculateProgress(x, 0, 40))));
 
@@ -568,57 +581,49 @@ namespace Squirrel
                 });
             }
 
-            // NB: Once we uninstall the old version of the app, we try to schedule
-            // it to be deleted at next reboot. Unfortunately, depending on whether
-            // the user has admin permissions, this can fail. So as a failsafe,
-            // before we try to apply any update, we assume previous versions in the
-            // directory are "dead" (i.e. already uninstalled, but not deleted), and
-            // we blow them away. This is to make sure that we don't attempt to run
-            // an uninstaller on an already-uninstalled version.
-            async Task cleanDeadVersions(SemanticVersion currentVersion, SemanticVersion newVersion, bool forceUninstall = false)
+            /// <summary>
+            /// Remove folders for older versions.
+            /// </summary>
+            /// <param name="versionsToSave">Versions that should not be deleted</param>
+            /// <param name="forceUninstall">Legacy argument</param>
+            /// <returns></returns>
+            async Task removeOldVersionFolders(SemanticVersion[] versionsToSave, bool forceUninstall = false)
             {
-                if (newVersion == null) return;
+                if(versionsToSave.Any(x => x == null))
+                {
+                    return;
+                }
 
                 var di = new DirectoryInfo(rootAppDirectory);
                 if (!di.Exists) return;
 
-                this.Log().Info("cleanDeadVersions: checking for version {0}", newVersion);
-
-                string currentVersionFolder = null;
-                if (currentVersion != null) {
-                    currentVersionFolder = getDirectoryForRelease(currentVersion).Name;
-                    this.Log().Info("cleanDeadVersions: exclude current version folder {0}", currentVersionFolder);
-                }
-
-                string newVersionFolder = null;
-                if (newVersion != null) {
-                    newVersionFolder = getDirectoryForRelease(newVersion).Name;
-                    this.Log().Info("cleanDeadVersions: exclude new version folder {0}", newVersionFolder);
-                }
-
-                // NB: If we try to access a directory that has already been 
-                // scheduled for deletion by MoveFileEx it throws what seems like
-                // NT's only error code, ERROR_ACCESS_DENIED. Squelch errors that
-                // come from here.
+                // Get all directories which are not equal to any of the folders for versions from versionsToSave
                 var toCleanup = di.GetDirectories()
                     .Where(x => x.Name.ToLowerInvariant().Contains("app-"))
-                    .Where(x => x.Name != newVersionFolder && x.Name != currentVersionFolder)
+                    .Where(x => versionsToSave.All(v => getDirectoryForRelease(v).Name != x.Name))
                     .Where(x => !isAppFolderDead(x.FullName));
 
-                if (forceUninstall == false) {
+                // Make all versions, which are scheduled to be deleted, dead
+                if (forceUninstall == false)
+                {
                     await toCleanup.ForEachAsync(async x => {
                         var squirrelApps = SquirrelAwareExecutableDetector.GetAllSquirrelAwareApps(x.FullName);
                         var args = String.Format("--squirrel-obsolete {0}", x.Name.Replace("app-", ""));
 
-                        if (squirrelApps.Count > 0) {
+                        if (squirrelApps.Count > 0)
+                        {
                             // For each app, run the install command in-order and wait
                             await squirrelApps.ForEachAsync(async exe => {
-                                using (var cts = new CancellationTokenSource()) { 
+                                using (var cts = new CancellationTokenSource())
+                                {
                                     cts.CancelAfter(10 * 1000);
 
-                                    try {
+                                    try
+                                    {
                                         await Utility.InvokeProcessAsync(exe, args, cts.Token);
-                                    } catch (Exception ex) {
+                                    }
+                                    catch (Exception ex)
+                                    {
                                         this.Log().ErrorException("Coudln't run Squirrel hook, continuing: " + exe, ex);
                                     }
                                 }
@@ -630,32 +635,54 @@ namespace Squirrel
                 // Include dead folders in folders to :fire:
                 toCleanup = di.GetDirectories()
                     .Where(x => x.Name.ToLowerInvariant().Contains("app-"))
-                    .Where(x => x.Name != newVersionFolder && x.Name != currentVersionFolder);
+                    .Where(x => versionsToSave.All(v => getDirectoryForRelease(v).Name != x.Name));
 
                 // Get the current process list in an attempt to not burn 
                 // directories which have running processes
-                var runningProcesses = UnsafeUtility.EnumerateProcesses(); 
+                var runningProcesses = UnsafeUtility.EnumerateProcesses();
 
                 // Finally, clean up the app-X.Y.Z directories
                 await toCleanup.ForEachAsync(async x => {
-                    try {
-                        if (runningProcesses.All(p => p.Item1 == null || !p.Item1.StartsWith(x.FullName, StringComparison.OrdinalIgnoreCase))) {
+                    try
+                    {
+                        if (runningProcesses.All(p => p.Item1 == null || !p.Item1.StartsWith(x.FullName, StringComparison.OrdinalIgnoreCase)))
+                        {
                             await Utility.DeleteDirectoryOrJustGiveUp(x.FullName);
                         }
 
-                        if (Directory.Exists(x.FullName)) {
+                        if (Directory.Exists(x.FullName))
+                        {
                             // NB: If we cannot clean up a directory, we need to make 
                             // sure that anyone finding it later won't attempt to run
                             // Squirrel events on it. We'll mark it with a .dead file
                             markAppFolderAsDead(x.FullName);
                         }
-                    } catch (UnauthorizedAccessException ex) {
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
                         this.Log().WarnException("Couldn't delete directory: " + x.FullName, ex);
 
                         // NB: Same deal as above
                         markAppFolderAsDead(x.FullName);
                     }
                 });
+            }
+
+            // NB: Once we uninstall the old version of the app, we try to schedule
+            // it to be deleted at next reboot. Unfortunately, depending on whether
+            // the user has admin permissions, this can fail. So as a failsafe,
+            // before we try to apply any update, we assume previous versions in the
+            // directory are "dead" (i.e. already uninstalled, but not deleted), and
+            // we blow them away. This is to make sure that we don't attempt to run
+            // an uninstaller on an already-uninstalled version.
+            async Task cleanDeadVersions(SemanticVersion currentVersion, SemanticVersion newVersion, bool forceUninstall = false)
+            {
+                if (newVersion == null) return;
+
+                var versionsToSave = new SemanticVersion[] { currentVersion, newVersion };
+
+                // Let's remove all folders with versions which are not current and new.
+                await removeOldVersionFolders(versionsToSave, forceUninstall);
 
                 // Clean up the packages directory too
                 var releasesFile = Utility.LocalReleaseFileForAppDir(rootAppDirectory);

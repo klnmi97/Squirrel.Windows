@@ -41,7 +41,7 @@ namespace Squirrel
                 {
                     var currentVersion = updateInfo.CurrentlyInstalledVersion != null ?
                         updateInfo.CurrentlyInstalledVersion.Version : null;
-                    // We remove all versions but current
+                    // remove all versions except the current one
                     await removeOldVersionFolders(new SemanticVersion[] { currentVersion });
                 }
                 catch (Exception ex)

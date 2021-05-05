@@ -39,10 +39,8 @@ namespace Squirrel
                 // Try to remove older versions before applying releases
                 try
                 {
-                    var currentVersion = updateInfo.CurrentlyInstalledVersion != null ?
-                        updateInfo.CurrentlyInstalledVersion.Version : null;
-                    // remove all versions except the current one
-                    await removeOldVersionFolders(new SemanticVersion[] { currentVersion });
+                    // Remove all versions except the current one
+                    await removeOldVersionFolders(new SemanticVersion[] { updateInfo.CurrentlyInstalledVersion?.Version });
                 }
                 catch (Exception ex)
                 {
@@ -110,10 +108,8 @@ namespace Squirrel
                 progress(98);
 
                 try {
-                    var currentVersion = updateInfo.CurrentlyInstalledVersion != null ?
-                        updateInfo.CurrentlyInstalledVersion.Version : null;
-
-                    await cleanDeadVersions(currentVersion, newVersion);
+                    // This call removes older packages from the package folder. newVersion is the only package kept there.
+                    cleanDeadVersions(newVersion);
                 } catch (Exception ex) {
                     this.Log().WarnException("Failed to clean dead versions, continuing anyways", ex);
                 }
@@ -675,14 +671,9 @@ namespace Squirrel
             // directory are "dead" (i.e. already uninstalled, but not deleted), and
             // we blow them away. This is to make sure that we don't attempt to run
             // an uninstaller on an already-uninstalled version.
-            async Task cleanDeadVersions(SemanticVersion currentVersion, SemanticVersion newVersion, bool forceUninstall = false)
+            void cleanDeadVersions(SemanticVersion newVersion)
             {
                 if (newVersion == null) return;
-
-                var versionsToSave = new SemanticVersion[] { currentVersion, newVersion };
-
-                // Let's remove all folders with versions which are not current and new.
-                await removeOldVersionFolders(versionsToSave, forceUninstall);
 
                 // Clean up the packages directory too
                 var releasesFile = Utility.LocalReleaseFileForAppDir(rootAppDirectory);

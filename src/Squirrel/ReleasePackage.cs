@@ -138,7 +138,8 @@ namespace Squirrel
             using (Utility.WithTempDirectory(out tempPath, null)) {
                 var tempDir = new DirectoryInfo(tempPath);
 
-                extractZipWithEscaping(InputPackageFile, tempPath).Wait();
+                // The wrapping function does not support progress showing, so pass empty lambda.
+                extractZipWithEscaping(InputPackageFile, tempPath, x => { }).Wait();
 
                 this.Log().Info("Extracting dependent packages: [{0}]", String.Join(",", dependencies.Select(x => x.Id)));
                 extractDependentPackages(dependencies, tempDir, targetFramework);
@@ -164,99 +165,49 @@ namespace Squirrel
             }
         }
 
-        static Task extractZipWithEscaping(string zipFilePath, string outFolder)
+        /// <summary>
+        /// Extracts zip archive with escaping.
+        /// </summary>
+        /// <param name="zipFilePath">Zip file path.</param>
+        /// <param name="outFolder">Output folder.</param>
+        /// <param name="progress">Ui progress showing function.</param>
+        /// <returns>Task handle for the extract zip task.</returns>
+        public static Task extractZipWithEscaping(string zipFilePath, string outFolder, Action<int> progress)
         {
-			return Task.Run(() => {
-				Directory.CreateDirectory(outFolder);
-
-				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
-					foreach (ZipEntry entry in zip.Entries.ToList()) {
-						var parts = entry.FileName.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
-						var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
-						entry.FileName = decoded;
-						entry.Extract(outFolder);
-					}
-				}
-			});
-		}
-
-        public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder)
-        {
-            return ExtractZipForInstall(zipFilePath, outFolder, rootPackageFolder, x => { });
-        }
-
-        public static Task ExtractZipForInstall(string zipFilePath, string outFolder, string rootPackageFolder, Action<int> progress)
-        {
-			// Regex for the matching of "lib/[framework]/" directory.
-			var re = new Regex(@"lib[\\\/][^\\\/]*[\\\/]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-
             return Task.Run(() => {
-				using (ZipFile zip = ZipFile.Read(zipFilePath)) {
-					var totalItems = zip.Entries.Count;
-                    var currentItem = 0;
+                Directory.CreateDirectory(outFolder);
 
-					foreach (ZipEntry entry in zip.Entries.ToList()) {
-						string folderToExtractEntry = outFolder;
+                using (ZipFile zip = ZipFile.Read(zipFilePath)) {
+                    var totalItems = zip.Entries.Count;
+                    var currentItem = 1;
 
-						// Report progress early since we might be need to continue for non-matches
-						currentItem++;
-						var percentage = (currentItem * 100d) / totalItems;
-						progress((int)percentage);						
+                    foreach (ZipEntry entry in zip.Entries.ToList()) {
+                        var parts = entry.FileName.Split('\\', '/').Select(x => Uri.UnescapeDataString(x));
+                        var decoded = String.Join(Path.DirectorySeparatorChar.ToString(), parts);
+                        entry.FileName = decoded;
+                        entry.Extract(outFolder);
 
-						// Skip the extracting of entries which path does not contain "lib/[framework]/". 
-						if (!re.IsMatch(entry.FileName)) continue;
-
-						// Cut "lib/[framework]/" from the entry FileName.
-						var cutPath = re.Replace(entry.FileName, "", 1);
-
-						// Skip the extracting of "lib/[framework]/" directory.
-						if (cutPath == "") continue;						
-
-                        var failureIsOkay = false;
-						string exeStubPath = "";
-                        if (!entry.IsDirectory && cutPath.Contains("_ExecutionStub.exe")) {
-                            // NB: On upgrade, many of these stubs will be in-use, nbd tho.
-                            failureIsOkay = true;
-							folderToExtractEntry = rootPackageFolder;
-							entry.FileName = Path.GetFileName(cutPath);
-
-							exeStubPath = Path.Combine(
-                                rootPackageFolder,
-								entry.FileName);
-
-                            LogHost.Default.Info("Rigging execution stub for {0} to {1}", cutPath, exeStubPath);
-                        }
-						else {
-							// We do not want to create "lib/[framework]/" directory in the installation folder, so use the cut entry's path.
-							entry.FileName = cutPath;
-						}
-
-                        try {
-							// PO: This is really weird. Why is it here? Let's leave it here as it could have some reason...
-                            Utility.Retry(() => {
-								entry.Extract(folderToExtractEntry);
-
-								// Rename the stub exe file after extraction.
-								if (failureIsOkay) {
-									string exeFinalPath = exeStubPath.Replace("_ExecutionStub.exe", ".exe");
-
-									// Delete target file if exists, as File.Move() does not support overwrite.
-									if (File.Exists(exeFinalPath)) {
-										File.Delete(exeFinalPath);
-									}
-
-									File.Move(exeStubPath, exeFinalPath);
-								}
-							}, 5);
-                        } catch (Exception e) {
-                            if (!failureIsOkay) throw;
-                            LogHost.Default.WarnException("Can't write execution stub, probably in use", e);
-                        }
+                        var percentage = (currentItem * 100d) / totalItems;
+                        progress((int)percentage);
+                        currentItem++;
                     }
                 }
-
-                progress(100);
             });
+        }
+
+        /// <summary>
+        /// Creates metadata only nuget package which does not contain app.
+        /// </summary>
+        /// <param name="extractedPkgPath">Extracted nuget package path.</param>
+        /// <param name="metadataPkgPath">Output metadata nuget package path.</param>
+        public static void createMetadataPkg(string extractedPkgPath, string metadataPkgPath)
+        {
+            using (ZipFile zip = new ZipFile()) {
+                zip.CompressionLevel = Ionic.Zlib.CompressionLevel.BestSpeed;
+                zip.AddDirectory(extractedPkgPath);
+                zip.RemoveSelectedEntries("lib\\*");
+                zip.Save(metadataPkgPath);
+            }
         }
 
         void extractDependentPackages(IEnumerable<IPackage> dependencies, DirectoryInfo tempPath, FrameworkName framework)

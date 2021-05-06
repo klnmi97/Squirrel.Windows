@@ -258,6 +258,8 @@ namespace Squirrel
             // place
             var entries = entriesQueue.ToList();
             var tempFile = default(string);
+
+            // PO: needs fix, does not create any file (redmine #16652)
             Utility.WithTempFile(out tempFile, releasePackagesDir);
 
             try {

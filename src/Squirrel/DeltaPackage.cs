@@ -207,7 +207,7 @@ namespace Squirrel
             
             try {
 				var task = Utility.InvokeProcessAsync(Utility.FindHelperExecutable("hdiffz.exe"),
-										String.Format("{0} {1} {2}", baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".hdiffz"),
+										String.Format("{0} {1} {2} {3}", "-s-48", baseFileListing[relativePath], targetFile.FullName, targetFile.FullName + ".hdiffz"),
 										CancellationToken.None);
 				task.Wait();
 

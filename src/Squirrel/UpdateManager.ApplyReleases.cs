@@ -110,7 +110,7 @@ namespace Squirrel
 
                 try {
                     // This call removes older packages from the package folder. newVersion is the only package kept there.
-                    cleanDeadVersions(newVersion);
+                    await cleanDeadVersions(newVersion);
                 } catch (Exception ex) {
                     this.Log().WarnException("Failed to clean dead versions, continuing anyways", ex);
                 }
@@ -744,7 +744,7 @@ namespace Squirrel
             // directory are "dead" (i.e. already uninstalled, but not deleted), and
             // we blow them away. This is to make sure that we don't attempt to run
             // an uninstaller on an already-uninstalled version.
-            void cleanDeadVersions(SemanticVersion newVersion)
+            async Task cleanDeadVersions(SemanticVersion newVersion)
             {
                 if (newVersion == null) return;
 

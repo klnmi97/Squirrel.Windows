@@ -511,6 +511,14 @@ namespace Squirrel
                                 fileStream.Write(buffer, 0, currentBytes);
                                 bytesCounter += currentBytes;
 
+                                lock (filePartsInfo.SyncRoot)
+                                {
+                                    filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (range.End - range.Start + 1));
+                                    filePartsInfo[index].BytesDownloaded = bytesCounter;
+                                }
+
+                                UpdateProgress(progress, filePartsInfo);
+
                                 // All bytes downloaded.
                                 if (bytesCounter == (range.End - range.Start + 1))
                                 {
@@ -521,14 +529,6 @@ namespace Squirrel
 
                                     return;
                                 }
-
-                                lock (filePartsInfo.SyncRoot)
-                                {
-                                    filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (range.End - range.Start + 1));
-                                    filePartsInfo[index].BytesDownloaded = bytesCounter;
-                                }
-
-                                UpdateProgress(progress, filePartsInfo);
 
                                 if (state.IsStopped)
                                 {

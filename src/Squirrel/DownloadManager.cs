@@ -448,7 +448,7 @@ namespace Squirrel
             string tempFilePath = "";
 
             // Attempts to download file part.
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 5; i++)
             {
                 try
                 {
@@ -475,7 +475,8 @@ namespace Squirrel
                         }
                     }
 
-                    httpWebRequest.AddRange(range.Start, range.End);
+                    // Download only remaining bytes.
+                    httpWebRequest.AddRange(range.Start + GetFileLength(tempFilePath), range.End);
 
                     using (HttpWebResponse httpWebResponse = httpWebRequest.GetResponse() as HttpWebResponse)
                     {
@@ -486,10 +487,10 @@ namespace Squirrel
                             continue;
                         }
 
-                        using (var fileStream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.Write))
+                        using (var fileStream = new FileStream(tempFilePath, FileMode.Append, FileAccess.Write, FileShare.Write))
                         {
                             byte[] buffer = new byte[bufferSize];
-                            long bytesCounter = 0;
+                            long bytesCounter = GetFileLength(tempFilePath);
 
                             while (true)
                             {
@@ -501,13 +502,17 @@ namespace Squirrel
                                 {
                                     lastError = DownloadResult.INTERNET_CONNECTION_LOST;
                                     state.Stop();
+                                    downloadFileTokenSource.Cancel();
                                     this.Log().Info(String.Format("Downloading of the chunk number {0} was cancelled.", index));
                                     break;
                                 }
 
                                 int currentBytes = readTask.Result;
+                                fileStream.Write(buffer, 0, currentBytes);
+                                bytesCounter += currentBytes;
 
-                                if (currentBytes == 0)
+                                // All bytes downloaded.
+                                if (bytesCounter == (range.End - range.Start + 1))
                                 {
                                     lock (filePartsInfo.SyncRoot)
                                     {
@@ -517,12 +522,9 @@ namespace Squirrel
                                     return;
                                 }
 
-                                fileStream.Write(buffer, 0, currentBytes);
-                                bytesCounter += currentBytes;
-
                                 lock (filePartsInfo.SyncRoot)
                                 {
-                                    filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (range.End - range.Start));
+                                    filePartsInfo[index].Progress = (int)((bytesCounter * 100) / (range.End - range.Start + 1));
                                     filePartsInfo[index].BytesDownloaded = bytesCounter;
                                 }
 
@@ -557,13 +559,11 @@ namespace Squirrel
                 }
                 catch (Exception ex)
                 {
+                    /* PO: Sometimes catches "An existing connection was forcibly closed by the remote host." exception.
+                           This is random exception which may occur while downloading files from the Azure (not tested
+                           against another server). */
                     this.Log().WarnException(String.Format("Couldn't download file chunk number {0}.", index), ex);
                     System.Threading.Thread.Sleep(5000);
-                }
-
-                lock (filePartsInfo.SyncRoot)
-                {
-                    filePartsInfo[index].Progress = 0;
                 }
 
                 if (state.IsStopped)
@@ -585,6 +585,18 @@ namespace Squirrel
             {
                 lastError = DownloadResult.CONNECTION_EXCEPTION;
             }
+        }
+
+        /// <summary>
+        /// Gets the size of the file.
+        /// </summary>
+        /// <param name="filename">Name of the file.</param>
+        /// <returns>File size if succeeds, otherwise 0.</returns>
+        private long GetFileLength(string filename)
+        {
+            if (!File.Exists(filename)) return 0;
+            FileInfo info = new FileInfo(filename);
+            return info.Length;
         }
 
         /// <summary>

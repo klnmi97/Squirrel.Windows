@@ -64,7 +64,7 @@ namespace Squirrel
                     return getDirectoryForRelease(updateInfo.CurrentlyInstalledVersion.Version).FullName;
                 }
 
-                status("Installing the newest version");
+                status("Installing the latest version");
                 // Progress range: 40 -> 80
                 var ret = await this.ErrorIfThrows(() => installPackageToAppDir(updateInfo, release, x => progress(CalculateProgress(x, 40, 80))), 
                     "Failed to install package to app dir");

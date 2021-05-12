@@ -560,7 +560,7 @@ namespace Squirrel
                 catch (Exception ex)
                 {
                     /* PO: Sometimes catches "An existing connection was forcibly closed by the remote host." exception.
-                           This is random exception which may occur while downloading files from the Azure (not tested
+                           This is random exception which may occur while downloading files from Azure (not tested
                            against another server). */
                     this.Log().WarnException(String.Format("Couldn't download file chunk number {0}.", index), ex);
                     System.Threading.Thread.Sleep(5000);

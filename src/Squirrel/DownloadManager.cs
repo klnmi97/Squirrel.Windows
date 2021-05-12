@@ -42,6 +42,12 @@ namespace Squirrel
         /// <summary>Number of bytes in one kilobyte. Is used for conversion.</summary>
         private const int bytesInKB = 1024;
 
+        /// <summary>Number of attempts to download the file (all file parts) in case of internet disconnection.</summary>
+        private const int fileDownloadAttempts = 3;
+
+        /// <summary>Number of attempts to download the single file part in case of connection problems.</summary>
+        private const int filePartDownloadAttempts = 5;
+
         /// <summary>To be able to cancel file download.</summary>
         private CancellationTokenSource downloadFileTokenSource;
 
@@ -153,7 +159,7 @@ namespace Squirrel
             }
 
             // Attempts to download the file.
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < fileDownloadAttempts; i++)
             {
                 if (CheckForInternetConnection())
                 {
@@ -448,7 +454,7 @@ namespace Squirrel
             string tempFilePath = "";
 
             // Attempts to download file part.
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < filePartDownloadAttempts; i++)
             {
                 try
                 {
@@ -590,12 +596,12 @@ namespace Squirrel
         /// <summary>
         /// Gets the size of the file.
         /// </summary>
-        /// <param name="filename">Name of the file.</param>
+        /// <param name="path">File path.</param>
         /// <returns>File size if succeeds, otherwise 0.</returns>
-        private long GetFileLength(string filename)
+        private long GetFileLength(string path)
         {
-            if (!File.Exists(filename)) return 0;
-            FileInfo info = new FileInfo(filename);
+            if (!File.Exists(path)) return 0;
+            FileInfo info = new FileInfo(path);
             return info.Length;
         }
 

@@ -28,6 +28,7 @@ namespace Squirrel
         readonly int parallelDownloadLimit;
         readonly string token;
         readonly int maxDeltas;
+        readonly string releasesFileName;
 
         IDisposable updateLock;
 
@@ -47,7 +48,8 @@ namespace Squirrel
             string token = "",
             int parallelDownloadLimit = 1,
             string netCheckUrl = "http://google.com/generate_204",
-            int maxDeltas = int.MaxValue)
+            int maxDeltas = int.MaxValue,
+            string releasesFileName = "RELEASES")
         {
             Contract.Requires(!String.IsNullOrEmpty(urlOrPath));
             Contract.Requires(!String.IsNullOrEmpty(applicationName));
@@ -66,6 +68,7 @@ namespace Squirrel
             this.parallelDownloadLimit = parallelDownloadLimit;
             DownloadManager.Instance.NetCheckUrl = netCheckUrl;
             this.maxDeltas = maxDeltas;
+            this.releasesFileName = releasesFileName;
         }
 
         public async Task<UpdateInfo> CheckForUpdate(bool ignoreDeltaUpdates = false, Action<int> progress = null, Action<string> status = null, UpdaterIntention intention = UpdaterIntention.Update)
@@ -73,7 +76,7 @@ namespace Squirrel
             var checkForUpdate = new CheckForUpdateImpl(rootAppDirectory);
 
             await acquireUpdateLock();
-            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, maxDeltas, ignoreDeltaUpdates, progress);
+            return await checkForUpdate.CheckForUpdate(intention, Utility.LocalReleaseFileForAppDir(rootAppDirectory), updateUrlOrPath, token, maxDeltas, releasesFileName, ignoreDeltaUpdates, progress);
         }
 
         public async Task DownloadReleases(IEnumerable<ReleaseEntry> releasesToDownload, Action<int> progress = null, Action<string> status = null)

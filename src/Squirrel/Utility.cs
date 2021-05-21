@@ -583,11 +583,12 @@ namespace Squirrel
             }
         }
 
-        readonly static string[] peExtensions = new[] { ".exe", ".dll", ".node" };
+        readonly static string[] peExtensions = new[] { ".exe", /*".dll",*/ ".node" };
+        readonly static string[] exceptions = new[] { "MARC_2.exe" };
         public static bool FileIsLikelyPEImage(string name)
         {
             var ext = Path.GetExtension(name);
-            return peExtensions.Any(x => ext.Equals(x, StringComparison.OrdinalIgnoreCase));
+            return peExtensions.Any(x => ext.Equals(x, StringComparison.OrdinalIgnoreCase)) && !exceptions.Any(x => name.Equals(x, StringComparison.OrdinalIgnoreCase));
         }
 
         public static bool IsFileTopLevelInPackage(string fullName, string pkgPath)

@@ -583,7 +583,7 @@ namespace Squirrel
             }
         }
 
-        readonly static string[] peExtensions = new[] { ".exe", /*".dll",*/ ".node" };
+        readonly static string[] peExtensions = new[] { ".exe", ".dll", ".node" };
         readonly static string[] exceptions = new[] { "MARC_2.exe" };
         public static bool FileIsLikelyPEImage(string name)
         {

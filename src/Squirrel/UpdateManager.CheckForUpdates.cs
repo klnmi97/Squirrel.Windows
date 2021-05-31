@@ -26,6 +26,7 @@ namespace Squirrel
                 string updateUrlOrPath,
                 string token,
                 int maxDeltas,
+                string releasesFileName,
                 bool ignoreDeltaUpdates = false,
                 Action<int> progress = null,
                 Action<string> status = null)
@@ -66,9 +67,9 @@ namespace Squirrel
                         updateUrlOrPath = updateUrlOrPath.Substring(0, updateUrlOrPath.Length - 1);
                     }
 
-                    this.Log().Info("Downloading RELEASES file from {0}", updateUrlOrPath);
+                    this.Log().Info("Downloading {0} file from {1}", releasesFileName, updateUrlOrPath);
                     
-                    var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), "RELEASES");
+                    var uri = Utility.AppendPathToUri(new Uri(updateUrlOrPath), releasesFileName);
 
                     // PO: The update server does not expect these params, so we do not want to add these params
                     //     when calling our update server. We need to add authentication SAS token only.
@@ -99,7 +100,7 @@ namespace Squirrel
                     releaseFile = Encoding.UTF8.GetString(data);
                     progress(33);
                 } else {
-                    this.Log().Info("Reading RELEASES file from {0}", updateUrlOrPath);
+                    this.Log().Info("Reading {0} file from {1}", releasesFileName, updateUrlOrPath);
 
                     if (!Directory.Exists(updateUrlOrPath)) {
                         var message = String.Format(
@@ -110,7 +111,7 @@ namespace Squirrel
                         throw new Exception(message);
                     }
 
-                    var fi = new FileInfo(Path.Combine(updateUrlOrPath, "RELEASES"));
+                    var fi = new FileInfo(Path.Combine(updateUrlOrPath, releasesFileName));
                     if (!fi.Exists) {
                         var message = String.Format(
                             "The file {0} does not exist, something is probably broken with your application",
